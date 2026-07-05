@@ -69,13 +69,15 @@ export async function switchUnits(to: Units): Promise<void> {
         await db.cycles.put({ ...active, tms: convertedCycleTms, units: to });
 
         const cycleWorkouts = await db.workouts.where('cycleId').equals(active.id).toArray();
-        // Regenerate pending workouts per lift with the converted TM + new increment.
+        // Regenerate pending workouts per lift with the converted TM. Set
+        // weights round to the new unit's ROUNDING increment (not the per-lift
+        // TM bumps, which are progression-only).
         for (const liftId of DAY_ORDER) {
           const plan = applyTmOverridePlan(
             cycleWorkouts,
             liftId,
             convertedCycleTms[liftId],
-            newLiftIncrements[liftId],
+            newRounding,
           );
           // Stamp the new unit onto each regenerated (pending) workout.
           const regenerated = plan.regeneratedWorkouts.map((w) => ({ ...w, units: to }));

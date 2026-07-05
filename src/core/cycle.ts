@@ -10,7 +10,12 @@ export function cycleWeeks(includeDeload: boolean): WeekNumber[] {
 /** Per-lift inputs needed to generate a cycle's workouts. */
 export interface CycleLiftInput {
   tm: number;
-  increment: number; // rounding/lift increment used for weight rounding
+  /**
+   * The WEIGHT-ROUNDING increment (Settings.roundingIncrement — lb: 5 | 2.5,
+   * kg: 2.5 | 1.25) applied to every generated set weight. NOT the per-lift
+   * TM bump (Settings.liftIncrements), which is used only at cycle advance.
+   */
+  increment: number;
 }
 
 export interface BuildCycleWorkoutsArgs {
@@ -146,6 +151,9 @@ export interface TmOverridePlan {
  * Plan a mid-cycle TM override for a single lift: regenerate the main sets of
  * only that lift's PENDING workouts using the new TM. Completed/in_progress/
  * skipped workouts are never touched (history-integrity invariant #1).
+ *
+ * `increment` is the WEIGHT-ROUNDING increment (Settings.roundingIncrement),
+ * not the lift's TM bump.
  */
 export function applyTmOverridePlan(
   workouts: readonly Workout[],

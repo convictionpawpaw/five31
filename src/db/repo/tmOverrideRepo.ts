@@ -26,11 +26,11 @@ export async function applyTmOverride(liftId: LiftId, newTm: number): Promise<vo
       if (!active) throw new Error('No active cycle for TM override.');
 
       const fromValue = active.tms[liftId];
-      const increment = settings.liftIncrements[liftId];
 
-      // Regenerate pending workouts for this lift.
+      // Regenerate pending workouts for this lift. Set weights round to the
+      // global roundingIncrement (NOT the lift's TM bump increment).
       const cycleWorkouts = await db.workouts.where('cycleId').equals(active.id).toArray();
-      const plan = applyTmOverridePlan(cycleWorkouts, liftId, newTm, increment);
+      const plan = applyTmOverridePlan(cycleWorkouts, liftId, newTm, settings.roundingIncrement);
       if (plan.regeneratedWorkouts.length > 0) {
         await db.workouts.bulkPut(plan.regeneratedWorkouts);
       }

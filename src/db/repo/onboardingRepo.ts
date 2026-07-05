@@ -35,7 +35,10 @@ export interface OnboardingPayload {
   roundingIncrement: number;
   tmPercent: number;
   includeDeload: boolean;
-  /** Per-lift TM increment used for progression AND set-weight rounding. */
+  /**
+   * Per-lift TM bump applied at cycle advance (progression ONLY). Set weights
+   * are always rounded to `roundingIncrement`, never to these.
+   */
   liftIncrements: Record<LiftId, number>;
   /** Chosen Training Max per lift (already derived from 1RM × tmPercent by the UI). */
   trainingMaxes: Record<LiftId, number>;
@@ -124,9 +127,10 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     units,
   };
 
+  // Set weights round to the global roundingIncrement (NOT the per-lift TM bumps).
   const lifts: Record<LiftId, CycleLiftInput> = DAY_ORDER.reduce(
     (acc, liftId) => {
-      acc[liftId] = { tm: trainingMaxes[liftId], increment: liftIncrements[liftId] };
+      acc[liftId] = { tm: trainingMaxes[liftId], increment: roundingIncrement };
       return acc;
     },
     {} as Record<LiftId, CycleLiftInput>,

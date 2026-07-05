@@ -93,7 +93,7 @@ export async function completeCycle(finalTms: Record<LiftId, number>): Promise<C
       };
       await db.cycles.add(nextCycle);
 
-      const lifts = liftInputs(finalTms, settings.liftIncrements);
+      const lifts = liftInputs(finalTms, settings.roundingIncrement);
       const workouts = buildCycleWorkouts({
         cycleId: nextId,
         cycleNumber: nextCycle.number,
@@ -117,7 +117,7 @@ export async function addDeloadToActiveCycle(): Promise<void> {
     if (!active) throw new Error('No active cycle.');
 
     const existing = await db.workouts.where('cycleId').equals(active.id).toArray();
-    const lifts = liftInputs(active.tms, settings.liftIncrements);
+    const lifts = liftInputs(active.tms, settings.roundingIncrement);
     const plan = addDeloadPlan(existing, {
       cycleId: active.id,
       cycleNumber: active.number,
@@ -146,14 +146,19 @@ export async function removeDeloadFromActiveCycle(): Promise<void> {
   });
 }
 
-/** Build the per-lift {tm, increment} record core cycle functions expect. */
+/**
+ * Build the per-lift {tm, increment} record core cycle functions expect.
+ * `roundingIncrement` is Settings.roundingIncrement — the WEIGHT-ROUNDING
+ * increment for generated set weights (the per-lift TM bumps in
+ * Settings.liftIncrements are progression-only and never rounded to).
+ */
 function liftInputs(
   tms: Record<LiftId, number>,
-  increments: Record<LiftId, number>,
+  roundingIncrement: number,
 ): Record<LiftId, CycleLiftInput> {
   return DAY_ORDER.reduce(
     (acc, liftId) => {
-      acc[liftId] = { tm: tms[liftId], increment: increments[liftId] };
+      acc[liftId] = { tm: tms[liftId], increment: roundingIncrement };
       return acc;
     },
     {} as Record<LiftId, CycleLiftInput>,
