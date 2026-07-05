@@ -1,0 +1,224 @@
+/* ---------------------------------------------------------------------------
+ * Cycle overview — TM strip, week×lift grid, deload + complete actions.
+ * ------------------------------------------------------------------------- */
+.cycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.cycle__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+.cycle__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.cycle__title {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+/* --- TM strip ------------------------------------------------------------ */
+.cycle__tmstrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+}
+.tmcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 72px;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.tmcell__lift {
+  color: var(--cyan);
+}
+.tmcell__tm {
+  font-size: var(--fs-lg);
+  color: var(--text-hi);
+}
+
+/* --- Grid ---------------------------------------------------------------- */
+.cycle__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cycle__grid-header,
+.cycle__grid-row {
+  display: grid;
+  grid-template-columns: 24px repeat(4, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+.cycle__grid-col {
+  text-align: center;
+  color: var(--text-mid);
+}
+.cycle__grid-week {
+  text-align: center;
+  color: var(--text-mid);
+}
+
+.cyclecell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 60px;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.cyclecell--empty {
+  background: transparent;
+  border-style: dashed;
+  opacity: 0.4;
+}
+.cyclecell--completed {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.cyclecell--in_progress {
+  border-color: var(--cyan);
+}
+.cyclecell--skipped {
+  opacity: 0.55;
+}
+.cyclecell__w {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+.cyclecell--completed .cyclecell__w {
+  color: var(--amber);
+}
+
+/* --- Status glyphs ------------------------------------------------------- */
+.glyph {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-low);
+  box-sizing: border-box;
+}
+/* pending — empty ring */
+.glyph--pending {
+  border-color: var(--text-low);
+  background: transparent;
+}
+/* in_progress — half-filled cyan */
+.glyph--in_progress {
+  border-color: var(--cyan);
+  background: linear-gradient(90deg, var(--cyan) 0 50%, transparent 50% 100%);
+}
+/* completed — amber-filled */
+.glyph--completed {
+  border-color: var(--amber);
+  background: var(--amber);
+  box-shadow: var(--glow-amber);
+}
+/* skipped — dashed ring */
+.glyph--skipped {
+  border-style: dashed;
+  border-color: var(--text-low);
+  background: transparent;
+}
+
+/* --- Deload + complete --------------------------------------------------- */
+.cycle__deload,
+.cycle__complete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.cycle__caption {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* --- TM override modal --------------------------------------------------- */
+.tmmodal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tmmodal__warn {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.tmmodal__actions,
+.ccmodal__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* --- Complete-cycle modal ------------------------------------------------ */
+.ccmodal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ccmodal__lift {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.ccmodal__lift-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.ccchip {
+  padding: 4px var(--space-2);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.ccchip--increase {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.ccchip--hold {
+  color: var(--text-mid);
+  border-color: var(--line);
+  background: var(--bg-2);
+}
+.ccmodal__lift-flow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.ccmodal__arrow {
+  color: var(--text-low);
+}
+.ccmodal__lift-edit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ccmodal__lift-edit .stepper {
+  flex: 1;
+}

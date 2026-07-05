@@ -1,0 +1,277 @@
+/* ---------------------------------------------------------------------------
+ * Workout logging screen.
+ * ------------------------------------------------------------------------- */
+.workout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.workout__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+/* --- Header -------------------------------------------------------------- */
+.workout__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-3);
+}
+.workout__lift {
+  font-size: var(--fs-xl);
+  letter-spacing: 0.04em;
+  color: var(--text-hi);
+}
+.workout__meta {
+  color: var(--text-hi);
+}
+
+/* --- Sections ------------------------------------------------------------ */
+.workout__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workout__section-title {
+  color: var(--cyan);
+}
+
+/* --- Warmups ------------------------------------------------------------- */
+.workout__warmup-head,
+.workout__notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.workout__warmup-head .label,
+.workout__notes-head .label {
+  color: var(--text-mid);
+}
+.workout__logall {
+  min-height: var(--tap);
+}
+.workout__warmup-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* --- Set rows ------------------------------------------------------------ */
+.setrow {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.setrow.is-logged {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.setrow__main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 56px;
+  padding: 0 var(--space-3);
+  text-align: left;
+}
+.setrow__weight {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+.setrow.is-logged .setrow__weight {
+  color: var(--amber);
+}
+.setrow__unit {
+  color: var(--text-mid);
+}
+.setrow__x {
+  color: var(--text-low);
+  margin: 0 var(--space-1);
+}
+.setrow__reps {
+  font-size: var(--fs-lg);
+  color: var(--text-hi);
+}
+.setrow__target {
+  color: var(--text-low);
+}
+.setrow__editor {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+/* --- AMRAP row (glowing, distinct) --------------------------------------- */
+.amrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--amber-dim);
+}
+.amrap.is-logged {
+  background: color-mix(in srgb, var(--amber) 22%, var(--bg-1));
+}
+.amrap__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.amrap__label {
+  color: var(--amber);
+}
+.amrap__prescription {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.amrap__readout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.amrap__pr-hint {
+  color: var(--amber-hi);
+  text-shadow: var(--glow-amber);
+}
+
+/* --- Accessories --------------------------------------------------------- */
+.accrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.accrow__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.accrow__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.accchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.accchip.is-logged {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.accchip.is-editing {
+  border-color: var(--cyan);
+}
+.accchip__reps {
+  font-size: var(--fs-lg);
+  color: var(--text-hi);
+}
+.accchip.is-logged .accchip__reps {
+  color: var(--amber);
+}
+.accrow__editor {
+  padding-top: var(--space-1);
+}
+.accrow__progress {
+  color: var(--cyan);
+}
+
+/* --- Notes --------------------------------------------------------------- */
+.workout__notes {
+  width: 100%;
+  min-height: 80px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-hi);
+  resize: vertical;
+}
+.workout__notes:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+
+/* --- Finish bar ---------------------------------------------------------- */
+/* Reserve enough scroll space to clear the fixed finish bar AND the TabBar so
+ * the last content isn't hidden behind them. */
+.workout__finishbar-spacer {
+  height: calc(var(--tap) + var(--space-3) * 2 + 56px + env(safe-area-inset-bottom));
+}
+/* Sit ABOVE the TabBar (which is fixed at bottom:0, height 56px + inset, z 100).
+ * Higher z-index + a bottom offset keep the Finish/Skip buttons clear of the
+ * tab navigation so taps never collide. */
+.workout__finishbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom));
+  z-index: 110;
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+}
+
+/* --- Modal actions ------------------------------------------------------- */
+.workout__modal-copy {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  margin-bottom: var(--space-3);
+}
+.workout__modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* --- Read-only ----------------------------------------------------------- */
+.workout__ro-sets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.workout__ro-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.workout__ro-note {
+  text-align: center;
+}
