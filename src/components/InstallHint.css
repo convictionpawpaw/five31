@@ -1,0 +1,47 @@
+.install-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--cyan);
+  border-radius: var(--radius);
+}
+
+.install-hint__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.install-hint__title {
+  color: var(--cyan);
+}
+
+.install-hint__text {
+  font-size: var(--fs-sm);
+  color: var(--text-mid);
+  line-height: 1.4;
+}
+
+.install-hint__share {
+  color: var(--cyan);
+  font-weight: 700;
+}
+
+.install-hint__close {
+  flex: 0 0 auto;
+  width: var(--tap);
+  height: var(--tap);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+  font-size: var(--fs-xl);
+  line-height: 1;
+  color: var(--text-low);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

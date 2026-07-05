@@ -1,0 +1,18 @@
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pr-badge__diamond {
+  width: 10px;
+  height: 10px;
+  background: var(--amber-hi);
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.pr-badge__label {
+  color: var(--pr);
+  font-weight: 700;
+}

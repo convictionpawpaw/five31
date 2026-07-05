@@ -1,0 +1,291 @@
+/* ---------------------------------------------------------------------------
+ * Onboarding wizard layout + step controls.
+ * ------------------------------------------------------------------------- */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.onboarding__head {
+  padding: var(--space-4) var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.onboarding__brand {
+  font-size: var(--fs-xl);
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  text-shadow: var(--glow-amber);
+}
+
+.onboarding__sub {
+  color: var(--text-mid);
+  margin-top: 2px;
+}
+
+.ticks {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.tick {
+  flex: 1;
+  height: 3px;
+  background: var(--bg-3);
+  border-radius: 2px;
+}
+.tick.is-done {
+  background: var(--cyan);
+}
+.tick.is-current {
+  background: var(--amber);
+  box-shadow: var(--glow-amber);
+}
+
+.onboarding__step-name {
+  margin-top: var(--space-2);
+  color: var(--text-hi);
+}
+
+.onboarding__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.step-body {
+  gap: var(--space-3);
+}
+
+.step-intro {
+  margin-bottom: calc(-1 * var(--space-1));
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-sm);
+}
+
+.onboarding__nav {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+}
+
+/* --- Fields --------------------------------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field__label {
+  color: var(--text-mid);
+}
+
+.field__box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  padding: 0 var(--space-3);
+  min-height: var(--tap);
+}
+.field__box:focus-within {
+  border-color: var(--cyan);
+}
+
+.field__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-hi);
+  font-size: var(--fs-lg);
+}
+.field__input.acc-name {
+  font-weight: 400;
+  font-size: var(--fs-md);
+}
+.field__input::placeholder {
+  color: var(--text-low);
+}
+
+.field__suffix {
+  color: var(--text-mid);
+}
+
+/* --- Segmented control ---------------------------------------------------- */
+.segmented {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+.segmented__opt {
+  flex: 1;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  color: var(--text-mid);
+  border-right: 1px solid var(--line);
+}
+.segmented__opt:last-child {
+  border-right: none;
+}
+.segmented__opt.is-active {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
+.hint {
+  margin-top: var(--space-2);
+  color: var(--text-low);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+.error {
+  color: var(--danger);
+  margin-top: var(--space-1);
+}
+
+/* --- TM step -------------------------------------------------------------- */
+.tm-oneRm {
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.field + .segmented,
+.segmented + .field {
+  margin-top: var(--space-3);
+}
+.segmented + .tm-oneRm {
+  margin-top: var(--space-3);
+}
+
+.tm-computed {
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+.tm-computed__val {
+  font-size: var(--fs-xl);
+}
+.tm-computed__unit {
+  font-size: var(--fs-sm);
+  color: var(--text-mid);
+}
+
+/* --- Increments step: stepper spacing ------------------------------------ */
+.hud-panel > .stepper {
+  margin-top: 0;
+}
+
+/* --- Accessories step ----------------------------------------------------- */
+.acc-row {
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.acc-row:last-of-type {
+  border-bottom: none;
+}
+
+.acc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.acc-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.acc-cell .label {
+  color: var(--text-mid);
+}
+
+/* The sets/rep-min/rep-max trio wraps to 2 cols on narrow screens gracefully. */
+.acc-grid:has(.acc-cell) {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* --- Review step ---------------------------------------------------------- */
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.review-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.review-row dt {
+  color: var(--text-mid);
+}
+.review-row dd {
+  color: var(--text-hi);
+}
+
+.review-lifts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.review-lift {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.review-lift:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.review-lift__nums {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.review-lift__tm .num,
+.review-lift__top .num {
+  font-size: var(--fs-lg);
+}
+
+.review-acc {
+  gap: var(--space-3);
+}
+.review-acc-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.review-acc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+.review-acc-name {
+  color: var(--text-hi);
+}

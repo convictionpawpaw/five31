@@ -1,0 +1,63 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    opacity 0.12s ease;
+  user-select: none;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* Primary — amber fill on near-black text, reserved glow. */
+.btn--primary {
+  background: var(--amber);
+  color: var(--bg-0);
+  border-color: var(--amber);
+  box-shadow: var(--glow-amber);
+}
+.btn--primary:active:not(:disabled) {
+  background: var(--amber-hi);
+}
+
+/* Ghost — flat hairline surface, the default. */
+.btn--ghost {
+  background: var(--bg-2);
+  color: var(--text-hi);
+  border-color: var(--line);
+}
+.btn--ghost:active:not(:disabled) {
+  background: var(--bg-3);
+}
+
+/* Danger — red hairline, fills on press. */
+.btn--danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.btn--danger:active:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg-0);
+}

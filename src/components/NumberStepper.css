@@ -1,0 +1,50 @@
+.stepper {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.stepper__btn {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-height: var(--tap);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--amber);
+  background: var(--bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+.stepper__btn:active:not(:disabled) {
+  background: var(--bg-3);
+}
+.stepper__btn:disabled {
+  color: var(--text-low);
+  opacity: 0.5;
+}
+
+.stepper__value {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  min-width: 0;
+}
+
+.stepper__num {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+.stepper__suffix {
+  color: var(--text-mid);
+}

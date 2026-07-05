@@ -1,0 +1,13 @@
+:root {
+  --bg-0:#060a0b; --bg-1:#0a1214; --bg-2:#101b1e; --bg-3:#16262a; --line:#1d3238;
+  --amber:#ffb000; --amber-hi:#ffd23f; --amber-dim:rgba(255,176,0,.14);   /* Vegas neon */
+  --cyan:#5ee6eb; --cyan-dim:rgba(94,230,235,.12);                        /* hologram */
+  --text-hi:#e8f1f2; --text-mid:#9fb4b6; --text-low:#5c7073;
+  --danger:#ff4f4f; --success:var(--cyan); --pr:var(--amber-hi);
+  --font:'Rajdhani',system-ui,sans-serif;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px; --fs-num:40px;
+  --ls-label:.14em; --radius:2px; --tap:48px;
+  --glow-amber:0 0 8px rgba(255,176,0,.55), 0 0 24px rgba(255,176,0,.25);
+  --glow-cyan:0 0 8px rgba(94,230,235,.5);
+  --space-1:4px; --space-2:8px; --space-3:16px; --space-4:24px; --space-5:40px;
+}
