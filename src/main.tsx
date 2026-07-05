@@ -8,9 +8,15 @@ import './assets/fonts/fonts.css';
 import './styles/base.css';
 import './styles/effects.css';
 
+import { registerSW } from 'virtual:pwa-register';
 import { initPersistence } from './pwa/persistence.ts';
 import { seedDemoData } from './db/devSeed.ts';
 import App from './App.tsx';
+
+// Register the service worker (autoUpdate). Everything is precached, so this
+// simply makes the app installable + fully offline; the new build swaps in on
+// the next load. `immediate` registers on startup rather than on window load.
+registerSW({ immediate: true });
 
 // Ask the browser to make storage persistent (best-effort; safe if unsupported).
 void initPersistence();

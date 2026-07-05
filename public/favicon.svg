@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" fill="#060a0b"/>
+  <g stroke="#5ee6eb" stroke-width="2" fill="none" stroke-linecap="square" opacity="0.9">
+    <path d="M8 16 L8 8 L16 8"/>
+    <path d="M48 8 L56 8 L56 16"/>
+    <path d="M56 48 L56 56 L48 56"/>
+    <path d="M16 56 L8 56 L8 48"/>
+  </g>
+  <text x="32" y="41" font-family="'Rajdhani','Segoe UI',system-ui,sans-serif"
+        font-size="26" font-weight="700" text-anchor="middle" fill="#ffb000"
+        letter-spacing="-1">531</text>
+</svg>

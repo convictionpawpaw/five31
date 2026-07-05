@@ -1,0 +1,76 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FIVE31">
+  <defs>
+    <!-- deep teal near-black field with a faint radial lift toward center -->
+    <radialGradient id="bg" cx="50%" cy="44%" r="72%">
+      <stop offset="0%" stop-color="#0b171a"/>
+      <stop offset="62%" stop-color="#070d0f"/>
+      <stop offset="100%" stop-color="#060a0b"/>
+    </radialGradient>
+    <!-- neon amber glow -->
+    <filter id="amberGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="cyanGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- faint scanline wash for the BR2049 CRT feel -->
+  <g opacity="0.06" fill="#5ee6eb">
+    <rect x="0" y="0" width="512" height="512" fill="none"/>
+    <g>
+      <rect x="0" y="40"  width="512" height="2"/>
+      <rect x="0" y="120" width="512" height="2"/>
+      <rect x="0" y="200" width="512" height="2"/>
+      <rect x="0" y="280" width="512" height="2"/>
+      <rect x="0" y="360" width="512" height="2"/>
+      <rect x="0" y="440" width="512" height="2"/>
+    </g>
+  </g>
+
+  <!-- thin cyan corner brackets (HUD frame) -->
+  <g stroke="#5ee6eb" stroke-width="6" fill="none" stroke-linecap="square" filter="url(#cyanGlow)" opacity="0.9">
+    <path d="M44 96 L44 44 L96 44"/>
+    <path d="M416 44 L468 44 L468 96"/>
+    <path d="M468 416 L468 468 L416 468"/>
+    <path d="M96 468 L44 468 L44 416"/>
+  </g>
+
+  <!--
+    "531" as geometric Rajdhani-esque numerals, drawn entirely as filled paths
+    so rendering never depends on an installed font. Bold, squared, 7-segment
+    inspired forms. Amber neon with glow.
+    Digit cell metrics: top y=176, bottom y=336 (height 160), stroke ~26.
+  -->
+  <g fill="#ffb000" filter="url(#amberGlow)">
+    <!-- 5  (x window 122..214) -->
+    <path d="M122 176 h92 v26 h-66 v37 h48 a44 44 0 0 1 44 44 v9
+             a44 44 0 0 1 -44 44 h-74 v-26 h70 a20 20 0 0 0 20 -20 v-11
+             a20 20 0 0 0 -20 -20 h-70 z"/>
+
+    <!-- 3  (x window 232..324) -->
+    <path d="M232 176 h48 a44 44 0 0 1 44 44 v6 a30 30 0 0 1 -15 26
+             a30 30 0 0 1 15 26 v6 a44 44 0 0 1 -44 44 h-48 v-26 h44
+             a20 20 0 0 0 20 -20 v-4 a17 17 0 0 0 -17 -17 h-33 v-26 h33
+             a17 17 0 0 0 17 -17 v-4 a20 20 0 0 0 -20 -20 h-44 z"/>
+
+    <!-- 1  (x window 342..402) -->
+    <path d="M348 210 l40 -34 h14 v160 h-26 v-124 l-24 20 z"/>
+  </g>
+
+  <!-- baseline tick + micro label bar for HUD texture -->
+  <g fill="#ffb000" opacity="0.85">
+    <rect x="122" y="356" width="280" height="4"/>
+  </g>
+</svg>

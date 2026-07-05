@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
+    "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint src",
     "format": "prettier --write ."
   },
