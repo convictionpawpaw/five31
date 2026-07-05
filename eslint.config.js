@@ -31,16 +31,13 @@ export default tseslint.config([
         {
           patterns: [
             {
-              // Any bare/scoped package import (not starting with . or /) is external.
-              group: ['*', '!./*', '!../*'],
+              // Block every import specifier, then re-allow ONLY relative imports
+              // that stay within src/core (start with ./ and do not escape via ..).
+              // This bans bare/scoped packages (react, dexie, ulid, …) AND any
+              // parent-directory escape (../…) out of the core purity zone.
+              regex: '^(?!\\.\\/)(?!.*\\.\\.\\/).*|\\.\\.\\/',
               message:
-                'src/core is a pure engine: no external package imports (react, dexie, etc.). Only relative imports within src/core are allowed.',
-            },
-            {
-              // Escaping the core directory via relative parent paths is forbidden.
-              group: ['../*', '../../*', '../../../*'],
-              message:
-                'src/core is a pure engine: no imports from outside src/core (relative paths must stay within core).',
+                'src/core is a pure engine: no external packages (react, dexie, etc.) and no imports from outside src/core. Only ./relative imports within core are allowed.',
             },
           ],
         },
