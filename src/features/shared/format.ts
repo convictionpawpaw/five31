@@ -21,3 +21,35 @@ export function fmtWeightUnit(weight: number, units: Units): string {
 export function fmtTargetReps(reps: number, amrap: boolean): string {
   return amrap ? `${reps}+` : String(reps);
 }
+
+const MONTHS = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+] as const;
+
+/**
+ * Compact uppercase date from an ISO string/date, e.g. '2026-07-05' → 'JUL 5'.
+ * Falls back to the raw first 10 chars if the string doesn't parse.
+ */
+export function fmtShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
+/** Month + year for a cycle header, e.g. '2026-07-05' → 'JUL 2026'. */
+export function fmtMonthYear(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 7);
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}

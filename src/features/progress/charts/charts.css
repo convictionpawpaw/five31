@@ -1,0 +1,86 @@
+/* ---------------------------------------------------------------------------
+ * Hand-rolled SVG chart primitives — BR2049 neon: cyan gridlines at low
+ * opacity, amber series, glowing amber PR diamonds. No fixed pixel width; the
+ * SVG scales to its container via viewBox + width:100%.
+ * ------------------------------------------------------------------------- */
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* Gridlines — hologram cyan, kept faint so the series reads first. */
+.chart__grid {
+  stroke: var(--cyan);
+  stroke-width: 0.5;
+  opacity: 0.18;
+}
+
+/* Baseline / axis frame — slightly stronger than gridlines. */
+.chart__axis {
+  stroke: var(--line);
+  stroke-width: 0.75;
+  opacity: 0.6;
+}
+
+/* Filled area under the line — very faint amber wash. */
+.chart__area {
+  fill: var(--amber);
+  opacity: 0.08;
+}
+
+/* The main series polyline — amber, no glow (glow reserved for PR markers). */
+.chart__series {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* Step-after series (TM per cycle) shares the amber stroke. */
+.chart__step {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 1.6;
+  stroke-linejoin: miter;
+  stroke-linecap: round;
+}
+
+/* Ordinary data point dot. */
+.chart__dot {
+  fill: var(--amber);
+}
+
+/* PR marker — glowing amber diamond (a rotated square). */
+.chart__pr {
+  fill: var(--amber-hi);
+  stroke: var(--amber-hi);
+  stroke-width: 0.5;
+  filter: drop-shadow(0 0 2px var(--amber-hi));
+}
+
+/* x-axis date labels (first / last). */
+.chart__xlabel {
+  fill: var(--text-low);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.chart__xlabel--end {
+  text-anchor: end;
+}
+.chart__xlabel--start {
+  text-anchor: start;
+}
+
+/* y-axis value labels (min / max). */
+.chart__ylabel {
+  fill: var(--text-low);
+  font-family: var(--font);
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: start;
+}

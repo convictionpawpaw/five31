@@ -1,0 +1,158 @@
+/* ---------------------------------------------------------------------------
+ * History detail — read-only set table with an edit mode (reps + notes only).
+ * ------------------------------------------------------------------------- */
+.hdetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.hdetail__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.hdetail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-3);
+}
+.hdetail__lift {
+  font-size: var(--fs-xl);
+  letter-spacing: 0.04em;
+  color: var(--text-hi);
+}
+.hdetail__meta {
+  color: var(--text-hi);
+}
+.hdetail__note {
+  margin-bottom: var(--space-3);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* --- Toolbar -------------------------------------------------------------- */
+.hdetail__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.hdetail__toolbar-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* --- Set table ------------------------------------------------------------ */
+.settable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.settable__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+.settable__row:last-child {
+  border-bottom: none;
+}
+.settable__weight {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+.settable__target {
+  white-space: nowrap;
+}
+.settable__actual {
+  font-size: var(--fs-lg);
+  color: var(--amber);
+  justify-self: end;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* --- Accessories ---------------------------------------------------------- */
+.hdetail__acc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.hdetail__acc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.hdetail__acc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.hdetail__acc-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.hdetail__acc-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.hdetail__acc-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+
+/* --- Notes ---------------------------------------------------------------- */
+.hdetail__notes {
+  width: 100%;
+  min-height: 80px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-hi);
+  resize: vertical;
+}
+.hdetail__notes:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+.hdetail__notes-ro {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--text-mid);
+}
+
+.hdetail__caption {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+}

@@ -1,0 +1,192 @@
+/* ---------------------------------------------------------------------------
+ * Accessories manager — per-day sections, cards, add/edit/reorder/archive.
+ * ------------------------------------------------------------------------- */
+.acc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3);
+}
+.acc__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.acc__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.acc__title {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+/* --- Day section ---------------------------------------------------------- */
+.acc__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.acc__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+.acc__day-title {
+  color: var(--cyan);
+}
+.acc__empty {
+  padding: var(--space-2) 0;
+}
+
+/* --- Card ----------------------------------------------------------------- */
+.acccard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.acccard__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.acccard__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.acccard__name {
+  font-size: var(--fs-sm);
+}
+.acccard__weight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.acccard__w {
+  font-size: var(--fs-lg);
+  color: var(--amber);
+}
+
+.sparkline {
+  width: 100%;
+  height: 28px;
+  display: block;
+}
+
+.acccard__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.acccard__reorder {
+  display: flex;
+  gap: var(--space-1);
+  margin-right: auto;
+}
+.acccard__move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--text-hi);
+  font-size: var(--fs-lg);
+}
+.acccard__move:disabled {
+  opacity: 0.35;
+}
+
+/* --- Archived ------------------------------------------------------------- */
+.acc__archived {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.acc__archived-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  text-align: left;
+}
+.acc__archived-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-3) var(--space-2);
+}
+.acc__archived-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  border-top: 1px solid var(--line);
+}
+.acc__archived-note {
+  padding: var(--space-2) 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* --- Modal form ----------------------------------------------------------- */
+.accform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.accform__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.accform__rangerow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.accform__input {
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-hi);
+}
+.accform__input:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+.accform__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* --- Shared modal copy ---------------------------------------------------- */
+.acc__modal-copy {
+  margin-bottom: var(--space-3);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.acc__modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}

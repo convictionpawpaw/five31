@@ -1,0 +1,199 @@
+/* ---------------------------------------------------------------------------
+ * Settings screen — grouped hud-panels: program, TMs, data, danger, footer.
+ * ------------------------------------------------------------------------- */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.settings__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.settings__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.settings__title {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* --- Row (label + control) ------------------------------------------------ */
+.settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap);
+}
+.settings__row-label {
+  min-width: 0;
+}
+.settings__row-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.settings__row-control .stepper {
+  min-width: 150px;
+}
+
+.settings__subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.settings__hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* --- Inline segmented (settings rows) ------------------------------------- */
+.segmented--inline {
+  display: inline-flex;
+  width: auto;
+  padding: 3px;
+}
+.segmented--inline .segmented__seg {
+  min-width: 52px;
+  padding: 0 var(--space-3);
+}
+
+/* --- Toggle switch -------------------------------------------------------- */
+.toggle {
+  position: relative;
+  width: 56px;
+  height: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  padding: 0;
+  flex-shrink: 0;
+}
+.toggle.is-on {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.toggle__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--text-low);
+  transition: none;
+}
+.toggle.is-on .toggle__knob {
+  left: 27px;
+  background: var(--amber);
+  box-shadow: var(--glow-amber);
+}
+
+/* --- Training maxes ------------------------------------------------------- */
+.settings__tm {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+/* --- Data ----------------------------------------------------------------- */
+.settings__storage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+/* --- Danger --------------------------------------------------------------- */
+.settings__danger {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+.settings__reset-input {
+  width: 100%;
+  min-height: var(--tap);
+  margin-bottom: var(--space-3);
+  padding: 0 var(--space-3);
+  background: var(--bg-0);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--text-hi);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+}
+.settings__reset-input:focus {
+  outline: none;
+  border-color: var(--danger);
+  box-shadow: 0 0 8px rgba(255, 79, 79, 0.4);
+}
+
+/* --- Modals --------------------------------------------------------------- */
+.settings__modal-copy {
+  margin-bottom: var(--space-3);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.settings__modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* --- Footer --------------------------------------------------------------- */
+.settings__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-4) 0 var(--space-3);
+  text-align: center;
+}
+.settings__manage {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--cyan);
+}
+.settings__version {
+  /* Long-press target for the hidden dev seed — no visual affordance. */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  line-height: 1.4;
+}
+.settings__seed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--cyan);
+  border-radius: var(--radius);
+  width: 100%;
+}
+.settings__seed-actions {
+  display: flex;
+  gap: var(--space-2);
+}

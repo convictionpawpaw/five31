@@ -1,0 +1,99 @@
+/* ---------------------------------------------------------------------------
+ * History screen — cycles as collapsible groups; rows tap through to detail.
+ * ------------------------------------------------------------------------- */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.history__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.history__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.history__title {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+/* --- Group (cycle) -------------------------------------------------------- */
+.histgroup {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.histgroup__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'title chev'
+    'tms   chev';
+  align-items: center;
+  gap: 2px var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--bg-2);
+}
+.histgroup__title {
+  grid-area: title;
+  color: var(--text-hi);
+}
+.histgroup__tms {
+  grid-area: tms;
+}
+.histgroup__chev {
+  grid-area: chev;
+  font-size: var(--fs-lg);
+}
+.histgroup__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Row ------------------------------------------------------------------ */
+.histrow {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-top: 1px solid var(--line);
+}
+.histrow--skipped {
+  opacity: 0.6;
+}
+.histrow__date {
+  white-space: nowrap;
+}
+.histrow__lift {
+  min-width: 0;
+}
+.histrow__week {
+  font-weight: 600;
+}
+.histrow__result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.histrow__amrap {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+.histrow__edited {
+  color: var(--cyan);
+  font-size: 9px;
+}

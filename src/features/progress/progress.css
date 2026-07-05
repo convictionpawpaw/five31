@@ -1,0 +1,195 @@
+/* ---------------------------------------------------------------------------
+ * Progress screen — segmented tabs, lift chips, charts, PR + TM audit lists.
+ * ------------------------------------------------------------------------- */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.progress__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.progress__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.progress__title {
+  font-size: var(--fs-xl);
+  color: var(--text-hi);
+}
+
+/* --- Segmented control ---------------------------------------------------- */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.segmented__seg {
+  min-height: var(--tap);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius);
+  color: var(--text-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  background: transparent;
+  transition: none;
+}
+.segmented__seg.is-active {
+  color: var(--bg-0);
+  background: var(--amber);
+}
+
+/* --- Lift chips / picker chips -------------------------------------------- */
+.progress__chips,
+.progress__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--text-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+}
+.chip.is-active {
+  border-color: var(--amber);
+  color: var(--amber);
+  background: var(--amber-dim);
+}
+.chip--wide {
+  flex: 1 1 auto;
+}
+.chip__tag {
+  color: var(--text-low);
+  font-size: 9px;
+}
+
+/* --- Stats readout -------------------------------------------------------- */
+.progress__stats {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+.progress__stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.progress__stat-label {
+  color: var(--text-mid);
+}
+.progress__stat-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.progress__caption {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  margin-top: var(--space-2);
+  line-height: 1.4;
+}
+
+.progress__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--cyan);
+}
+
+/* --- TM audit log --------------------------------------------------------- */
+.tmlog {
+  display: flex;
+  flex-direction: column;
+}
+.tmlog__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.tmlog__row:last-child {
+  border-bottom: none;
+}
+.tmlog__type {
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+.tmlog__type--manual_override {
+  color: var(--amber);
+}
+.tmlog__type--unit_conversion {
+  color: var(--cyan);
+}
+.tmlog__flow {
+  font-size: var(--fs-sm);
+  text-align: right;
+}
+.tmlog__date {
+  color: var(--text-low);
+  white-space: nowrap;
+}
+
+/* --- PR list -------------------------------------------------------------- */
+.prlist {
+  display: flex;
+  flex-direction: column;
+}
+.prlist__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.prlist__row:last-child {
+  border-bottom: none;
+}
+.prlist__main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.prlist__stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.prlist__lift {
+  font-size: var(--fs-lg);
+  color: var(--text-hi);
+}
+.prlist__date {
+  color: var(--text-low);
+}
