@@ -1,7 +1,27 @@
 import type { LiftId, WeekNumber } from './types.ts';
 
-/** Canonical order lifts are trained within a week. */
+/** Canonical (default) order lifts are trained within a week. */
 export const DAY_ORDER: readonly LiftId[] = ['press', 'deadlift', 'bench', 'squat'] as const;
+
+/**
+ * Validate a user-supplied training-day order. Returns `order` unchanged iff it
+ * is a valid permutation of the four canonical lifts (right length, no
+ * duplicates, no unknown ids); otherwise — including `undefined` — returns the
+ * canonical {@link DAY_ORDER}. Pure: never mutates its input.
+ *
+ * This is the single gate every ordering consumer routes a stored `dayOrder`
+ * through, so an absent or malformed value always degrades to the classic order.
+ */
+export function normalizeDayOrder(order: readonly LiftId[] | undefined): readonly LiftId[] {
+  if (order === undefined || order.length !== DAY_ORDER.length) return DAY_ORDER;
+  const seen = new Set<LiftId>();
+  for (const liftId of order) {
+    if (!DAY_ORDER.includes(liftId)) return DAY_ORDER; // unknown id
+    if (seen.has(liftId)) return DAY_ORDER; // duplicate
+    seen.add(liftId);
+  }
+  return order;
+}
 
 /** A single prescribed set as a fraction of the Training Max, plus target reps. */
 export interface SchemeSet {

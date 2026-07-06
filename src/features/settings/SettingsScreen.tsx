@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { BackupFile, LiftId, Settings, Units } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 import { roundingIncrementOptions } from '../../core/units.ts';
 import { db } from '../../db/db.ts';
 import {
@@ -143,6 +143,20 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
     }
   };
 
+  const order = normalizeDayOrder(settings.dayOrder);
+
+  const moveDay = async (index: number, dir: -1 | 1) => {
+    const next = [...order];
+    const j = index + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[index], next[j]] = [next[j]!, next[index]!];
+    try {
+      await updateSettings({ dayOrder: next });
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Update failed', 'danger');
+    }
+  };
+
   return (
     <HudPanel title="Program" className="settings__section">
       <Row label="Units">
@@ -180,7 +194,7 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
 
       <div className="settings__subgroup">
         <span className="label text-mid">TM increments</span>
-        {DAY_ORDER.map((liftId) => (
+        {order.map((liftId) => (
           <Row key={liftId} label={LIFT_NAMES[liftId]}>
             <NumberStepper
               value={settings.liftIncrements[liftId]}
@@ -194,6 +208,39 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
           </Row>
         ))}
       </div>
+
+      <div className="settings__subgroup">
+        <span className="label text-mid">Day order</span>
+        {order.map((liftId, i) => (
+          <div key={liftId} className="settings__dayrow">
+            <span className="label text-low settings__daypos num">{i + 1}</span>
+            <span className="label label-hi settings__dayname">{LIFT_NAMES[liftId]}</span>
+            <div className="settings__daymove">
+              <button
+                type="button"
+                className="settings__move"
+                aria-label={`Move ${LIFT_NAMES[liftId]} earlier`}
+                disabled={i === 0}
+                onClick={() => void moveDay(i, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="settings__move"
+                aria-label={`Move ${LIFT_NAMES[liftId]} later`}
+                disabled={i === order.length - 1}
+                onClick={() => void moveDay(i, 1)}
+              >
+                ↓
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="label text-low settings__hint">
+        Order of training days within each week. Applies immediately — including the current cycle.
+      </p>
 
       <Row label="Deload default">
         <Toggle on={settings.includeDeload} onToggle={() => void toggleDeload()} />
@@ -232,10 +279,11 @@ function TrainingMaxSection({
 }) {
   const [overrideLift, setOverrideLift] = useState<LiftId | null>(null);
   const tmStep = settings.units === 'kg' ? 1.25 : 2.5;
+  const order = normalizeDayOrder(settings.dayOrder);
 
   return (
     <HudPanel title="Training Maxes" className="settings__section">
-      {DAY_ORDER.map((liftId) => (
+      {order.map((liftId) => (
         <Row key={liftId} label={LIFT_NAMES[liftId]}>
           <span className="settings__tm">
             <span className="num num-md text-amber">

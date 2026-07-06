@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { Cycle, LiftId, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import type { Cycle, LiftId, Settings, Workout } from '../../core/types.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 import { db } from '../../db/db.ts';
-import { listCycles } from '../../db/repo/index.ts';
+import { getSettings, listCycles } from '../../db/repo/index.ts';
 import { EmptyState, PrBadge } from '../../components/index.ts';
 import { LIFT_NAMES, weekLabel } from '../shared/liftLabels.ts';
 import { fmtMonthYear, fmtShortDate, fmtWeight } from '../shared/format.ts';
@@ -13,13 +13,18 @@ import { groupHistoryByCycle, type HistoryGroup, type HistoryRow } from './histo
 import './history.css';
 
 interface HistoryData {
+  settings: Settings | null;
   cycles: Cycle[];
   workouts: Workout[];
 }
 
 async function readHistory(): Promise<HistoryData> {
-  const [cycles, workouts] = await Promise.all([listCycles(), db.workouts.toArray()]);
-  return { cycles, workouts };
+  const [settings, cycles, workouts] = await Promise.all([
+    getSettings(),
+    listCycles(),
+    db.workouts.toArray(),
+  ]);
+  return { settings: settings ?? null, cycles, workouts };
 }
 
 export function HistoryScreen() {
@@ -28,6 +33,7 @@ export function HistoryScreen() {
     () => (data ? groupHistoryByCycle(data.cycles, data.workouts) : []),
     [data],
   );
+  const order = useMemo(() => normalizeDayOrder(data?.settings?.dayOrder), [data?.settings?.dayOrder]);
 
   if (data === undefined) {
     return (
@@ -46,18 +52,28 @@ export function HistoryScreen() {
       {groups.length === 0 ? (
         <EmptyState title="No history yet" message="Completed and skipped workouts appear here." />
       ) : (
-        groups.map((group, i) => <CycleGroup key={group.cycle.id} group={group} defaultOpen={i === 0} />)
+        groups.map((group, i) => (
+          <CycleGroup key={group.cycle.id} group={group} defaultOpen={i === 0} order={order} />
+        ))
       )}
     </div>
   );
 }
 
-/** "TMs 125/285/210/265" in DAY_ORDER for a cycle header. */
-function tmSummary(tms: Record<LiftId, number>): string {
-  return DAY_ORDER.map((liftId) => fmtWeight(tms[liftId])).join('/');
+/** "TMs 125/285/210/265" in the user's day order for a cycle header. */
+function tmSummary(tms: Record<LiftId, number>, order: readonly LiftId[]): string {
+  return order.map((liftId) => fmtWeight(tms[liftId])).join('/');
 }
 
-function CycleGroup({ group, defaultOpen }: { group: HistoryGroup; defaultOpen: boolean }) {
+function CycleGroup({
+  group,
+  defaultOpen,
+  order,
+}: {
+  group: HistoryGroup;
+  defaultOpen: boolean;
+  order: readonly LiftId[];
+}) {
   const [open, setOpen] = useState(defaultOpen);
   const { cycle } = group;
   const cycleNo = String(cycle.number).padStart(2, '0');
@@ -74,7 +90,7 @@ function CycleGroup({ group, defaultOpen }: { group: HistoryGroup; defaultOpen: 
           Cycle {cycleNo} · {fmtMonthYear(cycle.startedAt)}
         </span>
         <span className="label text-low histgroup__tms">
-          TMs {tmSummary(cycle.tms)} {cycle.units.toUpperCase()}
+          TMs {tmSummary(cycle.tms, order)} {cycle.units.toUpperCase()}
         </span>
         <span className="label text-low histgroup__chev" aria-hidden="true">
           {open ? '−' : '+'}

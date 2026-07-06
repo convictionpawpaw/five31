@@ -4,6 +4,7 @@ import {
   compareWorkoutOrder,
   isCycleResolved,
   lastCompletedWorkout,
+  makeWorkoutOrderComparator,
   selectNextWorkout,
   topWorkSet,
 } from '../workoutSelect.ts';
@@ -71,6 +72,42 @@ describe('selectNextWorkout', () => {
       mk('b', 1, 'deadlift', 'skipped'),
     ];
     expect(selectNextWorkout(ws)).toBeNull();
+  });
+
+  it('respects a custom dayOrder: squat wk1 beats press wk1', () => {
+    const custom: LiftId[] = ['squat', 'bench', 'deadlift', 'press'];
+    const ws = [
+      mk('press-1', 1, 'press', 'pending'),
+      mk('squat-1', 1, 'squat', 'pending'),
+    ];
+    // Classic order → press first.
+    expect(selectNextWorkout(ws)?.id).toBe('press-1');
+    // Custom order → squat first.
+    expect(selectNextWorkout(ws, custom)?.id).toBe('squat-1');
+  });
+
+  it('a malformed custom order falls back to the classic default', () => {
+    const bad: LiftId[] = ['squat', 'squat', 'bench', 'press']; // duplicate
+    const ws = [
+      mk('press-1', 1, 'press', 'pending'),
+      mk('squat-1', 1, 'squat', 'pending'),
+    ];
+    expect(selectNextWorkout(ws, bad)?.id).toBe('press-1');
+  });
+});
+
+describe('makeWorkoutOrderComparator', () => {
+  it('sorts within a week by the given order, week-major', () => {
+    const custom: LiftId[] = ['squat', 'bench', 'deadlift', 'press'];
+    const ws = [
+      mk('a', 2, 'squat', 'pending'),
+      mk('b', 1, 'press', 'pending'),
+      mk('c', 1, 'squat', 'pending'),
+      mk('d', 1, 'bench', 'pending'),
+    ];
+    const sorted = [...ws].sort(makeWorkoutOrderComparator(custom)).map((w) => w.id);
+    // Week 1 first (squat, bench, …, press), then week 2 squat.
+    expect(sorted).toEqual(['c', 'd', 'b', 'a']);
   });
 });
 

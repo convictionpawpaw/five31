@@ -1,5 +1,5 @@
 import type { LiftId, WeekNumber, Workout, WorkoutStatus } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 import { topWorkSet } from '../shared/workoutSelect.ts';
 
 /** One cell of the week×lift grid. */
@@ -11,7 +11,7 @@ export interface GridCell {
   topWeight: number | null;
 }
 
-/** One row of the grid: a week and its four lift cells (DAY_ORDER). */
+/** One row of the grid: a week and its four lift cells (in the user's day order). */
 export interface GridRow {
   week: WeekNumber;
   cells: GridCell[];
@@ -19,14 +19,19 @@ export interface GridRow {
 
 /**
  * Arrange a cycle's workouts into a week×lift grid. Rows are the distinct weeks
- * present (ascending — 1,2,3, then 4/deload if any); columns follow DAY_ORDER.
+ * present (ascending — 1,2,3, then 4/deload if any); columns follow the user's
+ * `dayOrder` (normalized — absent/malformed falls back to the classic DAY_ORDER).
  * A missing workout yields an empty cell (defensive; a well-formed cycle is full).
  */
-export function buildGrid(workouts: readonly Workout[]): GridRow[] {
+export function buildGrid(
+  workouts: readonly Workout[],
+  dayOrder?: readonly LiftId[],
+): GridRow[] {
+  const order = normalizeDayOrder(dayOrder);
   const weeks = Array.from(new Set(workouts.map((w) => w.week))).sort((a, b) => a - b);
   return weeks.map((week) => ({
     week,
-    cells: DAY_ORDER.map((liftId): GridCell => {
+    cells: order.map((liftId): GridCell => {
       const workout = workouts.find((w) => w.week === week && w.liftId === liftId) ?? null;
       const top = workout ? topWorkSet(workout) : null;
       return {

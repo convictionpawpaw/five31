@@ -1,6 +1,6 @@
 import { ulid } from 'ulid';
 import type { Cycle, LiftId, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { DAY_ORDER, normalizeDayOrder } from '../../core/scheme.ts';
 import {
   addDeloadPlan,
   buildCycleWorkouts,
@@ -101,6 +101,7 @@ export async function completeCycle(finalTms: Record<LiftId, number>): Promise<C
         units: settings.units,
         lifts,
         ids: () => ulid(),
+        dayOrder: normalizeDayOrder(settings.dayOrder),
       });
       await db.workouts.bulkAdd(workouts);
 
@@ -124,6 +125,7 @@ export async function addDeloadToActiveCycle(): Promise<void> {
       units: active.units,
       lifts,
       ids: () => ulid(),
+      dayOrder: normalizeDayOrder(settings.dayOrder),
     });
     await db.workouts.bulkAdd(plan.addedWorkouts);
     await db.cycles.put({ ...active, includeDeload: true });

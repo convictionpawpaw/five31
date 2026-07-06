@@ -1,30 +1,48 @@
 import type { LiftId, MainSet, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 
-/** Rank a lift by its position in the canonical training-day order. */
-function dayRank(liftId: LiftId): number {
-  const i = DAY_ORDER.indexOf(liftId);
-  return i === -1 ? DAY_ORDER.length : i;
+/** Rank a lift by its position in the given training-day order. */
+function dayRank(liftId: LiftId, order: readonly LiftId[]): number {
+  const i = order.indexOf(liftId);
+  return i === -1 ? order.length : i;
 }
 
 /**
- * Stable within-cycle ordering: week ascending (1→4), then DAY_ORDER within a
- * week (press → deadlift → bench → squat). Used to sort a cycle's workouts for
- * the grid and to pick the "earliest pending" workout on Today.
+ * Build a comparator for stable within-cycle ordering: week ascending (1→4),
+ * then the user's day order within a week. `dayOrder` is normalized (a malformed
+ * or absent value falls back to the classic DAY_ORDER). Used to sort a cycle's
+ * workouts for the grid and to pick the "earliest pending" workout on Today.
+ */
+export function makeWorkoutOrderComparator(
+  dayOrder?: readonly LiftId[],
+): (a: Workout, b: Workout) => number {
+  const order = normalizeDayOrder(dayOrder);
+  return (a, b) => {
+    if (a.week !== b.week) return a.week - b.week;
+    return dayRank(a.liftId, order) - dayRank(b.liftId, order);
+  };
+}
+
+/**
+ * Stable within-cycle ordering with the classic DAY_ORDER. Retained for callers
+ * that do not (yet) thread a custom order; prefer {@link makeWorkoutOrderComparator}
+ * with the user's `settings.dayOrder` for user-facing selection.
  */
 export function compareWorkoutOrder(a: Workout, b: Workout): number {
-  if (a.week !== b.week) return a.week - b.week;
-  return dayRank(a.liftId) - dayRank(b.liftId);
+  return makeWorkoutOrderComparator()(a, b);
 }
 
 /**
- * The next actionable workout in a cycle:
+ * The next actionable workout in a cycle, respecting the user's `dayOrder`:
  *  1. any in_progress workout (earliest by week/day order), else
- *  2. the earliest pending workout (week 1→4, then DAY_ORDER).
+ *  2. the earliest pending workout (week 1→4, then the user's day order).
  * Returns null when every workout is completed or skipped (cycle resolved).
  */
-export function selectNextWorkout(workouts: readonly Workout[]): Workout | null {
-  const ordered = [...workouts].sort(compareWorkoutOrder);
+export function selectNextWorkout(
+  workouts: readonly Workout[],
+  dayOrder?: readonly LiftId[],
+): Workout | null {
+  const ordered = [...workouts].sort(makeWorkoutOrderComparator(dayOrder));
   const inProgress = ordered.find((w) => w.status === 'in_progress');
   if (inProgress) return inProgress;
   const pending = ordered.find((w) => w.status === 'pending');

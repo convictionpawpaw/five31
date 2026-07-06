@@ -9,7 +9,7 @@ import type {
   Units,
   Workout,
 } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { DAY_ORDER, normalizeDayOrder } from '../../core/scheme.ts';
 import { buildCycleWorkouts, type CycleLiftInput } from '../../core/cycle.ts';
 import { db, SETTINGS_ID } from '../db.ts';
 import { CURRENT_SCHEMA_VERSION } from '../migrations.ts';
@@ -44,6 +44,12 @@ export interface OnboardingPayload {
   trainingMaxes: Record<LiftId, number>;
   /** Optional accessories (≤3 per day; the cap is enforced downstream). */
   accessories?: OnboardingAccessoryInput[];
+  /**
+   * Optional user-chosen training-day order. Absent ⇒ classic DAY_ORDER (the
+   * wizard does not collect this — it defaults to classic, so the friend's
+   * experience is unchanged). Validated via normalizeDayOrder before use.
+   */
+  dayOrder?: LiftId[];
 }
 
 /**
@@ -79,10 +85,16 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     liftIncrements,
     trainingMaxes,
     accessories = [],
+    dayOrder,
   } = payload;
 
   const now = new Date().toISOString();
   const cycleId = ulid();
+
+  // Validate the requested order once; persist ONLY a valid custom order (a
+  // classic/absent order leaves the field undefined so old-default rows and
+  // this row stay identical).
+  const normalizedOrder = normalizeDayOrder(dayOrder);
 
   const settings: Settings = {
     id: SETTINGS_ID,
@@ -91,6 +103,7 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     tmPercent,
     includeDeload,
     liftIncrements,
+    ...(dayOrder !== undefined ? { dayOrder: [...normalizedOrder] } : {}),
     onboardingComplete: true,
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
@@ -155,6 +168,7 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     units,
     lifts,
     ids: () => ulid(),
+    dayOrder: normalizedOrder,
   });
 
   await db.transaction(

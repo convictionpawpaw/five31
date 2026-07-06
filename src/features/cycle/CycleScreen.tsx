@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Cycle, LiftId, Settings, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 import {
   addDeloadToActiveCycle,
   getActiveCycle,
@@ -65,7 +65,8 @@ export function CycleScreen() {
     );
   }
 
-  const grid = buildGrid(workouts);
+  const order = normalizeDayOrder(settings.dayOrder);
+  const grid = buildGrid(workouts, order);
   const canComplete = allResolved(workouts);
   const withDeload = hasDeload(workouts);
   const canRemoveDeload = deloadRemovable(workouts);
@@ -98,7 +99,7 @@ export function CycleScreen() {
 
       {/* TM strip */}
       <section className="cycle__tmstrip">
-        {DAY_ORDER.map((liftId) => (
+        {order.map((liftId) => (
           <button
             key={liftId}
             type="button"
@@ -119,7 +120,7 @@ export function CycleScreen() {
         <div className="cycle__grid" role="table" aria-label="Cycle schedule">
           <div className="cycle__grid-header" role="row">
             <span className="cycle__grid-corner label" role="columnheader" />
-            {DAY_ORDER.map((liftId) => (
+            {order.map((liftId) => (
               <span key={liftId} className="label cycle__grid-col" role="columnheader">
                 {LIFT_ABBR[liftId]}
               </span>

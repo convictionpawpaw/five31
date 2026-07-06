@@ -10,7 +10,7 @@ import type {
   TmEvent,
   Workout,
 } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
 import { db } from '../../db/db.ts';
 import {
   getSettings,
@@ -84,6 +84,7 @@ export function ProgressScreen() {
   }
 
   const { settings } = data;
+  const order = normalizeDayOrder(settings.dayOrder);
 
   return (
     <div className="progress safe-top">
@@ -106,9 +107,9 @@ export function ProgressScreen() {
         ))}
       </div>
 
-      {tab === 'e1rm' && <E1rmTab workouts={data.workouts} units={settings.units} />}
+      {tab === 'e1rm' && <E1rmTab workouts={data.workouts} units={settings.units} order={order} />}
       {tab === 'tm' && (
-        <TmTab cycles={data.cycles} tmEvents={data.tmEvents} units={settings.units} />
+        <TmTab cycles={data.cycles} tmEvents={data.tmEvents} units={settings.units} order={order} />
       )}
       {tab === 'accessories' && (
         <AccessoriesTab
@@ -142,10 +143,18 @@ function Stat({ label, stat }: { label: string; stat: StatValue | null }) {
   );
 }
 
-function LiftChips({ value, onChange }: { value: LiftId; onChange: (l: LiftId) => void }) {
+function LiftChips({
+  value,
+  onChange,
+  order,
+}: {
+  value: LiftId;
+  onChange: (l: LiftId) => void;
+  order: readonly LiftId[];
+}) {
   return (
     <div className="progress__chips" role="tablist" aria-label="Lift">
-      {DAY_ORDER.map((liftId) => (
+      {order.map((liftId) => (
         <button
           key={liftId}
           type="button"
@@ -163,13 +172,21 @@ function LiftChips({ value, onChange }: { value: LiftId; onChange: (l: LiftId) =
 
 // --- e1RM tab --------------------------------------------------------------
 
-function E1rmTab({ workouts, units }: { workouts: Workout[]; units: Settings['units'] }) {
-  const [lift, setLift] = useState<LiftId>('press');
+function E1rmTab({
+  workouts,
+  units,
+  order,
+}: {
+  workouts: Workout[];
+  units: Settings['units'];
+  order: readonly LiftId[];
+}) {
+  const [lift, setLift] = useState<LiftId>(order[0]!);
   const series = useMemo(() => buildE1rmSeries(workouts, lift, units), [workouts, lift, units]);
 
   return (
     <>
-      <LiftChips value={lift} onChange={setLift} />
+      <LiftChips value={lift} onChange={setLift} order={order} />
       <HudPanel title={`${LIFT_NAMES[lift]} · Estimated 1RM`}>
         {series.points.length === 0 ? (
           <EmptyState title="No AMRAP data" message="Complete an AMRAP set to chart e1RM." />
@@ -194,12 +211,14 @@ function TmTab({
   cycles,
   tmEvents,
   units,
+  order,
 }: {
   cycles: Cycle[];
   tmEvents: TmEvent[];
   units: Settings['units'];
+  order: readonly LiftId[];
 }) {
-  const [lift, setLift] = useState<LiftId>('press');
+  const [lift, setLift] = useState<LiftId>(order[0]!);
   const series = useMemo(() => buildTmStepSeries(cycles, lift, units), [cycles, lift, units]);
   const events = useMemo(
     () => tmEvents.filter((e) => e.liftId === lift).slice().reverse(),
@@ -208,7 +227,7 @@ function TmTab({
 
   return (
     <>
-      <LiftChips value={lift} onChange={setLift} />
+      <LiftChips value={lift} onChange={setLift} order={order} />
       <HudPanel title={`${LIFT_NAMES[lift]} · Training Max per Cycle`}>
         {series.points.length === 0 ? (
           <EmptyState title="No cycles yet" message="Training maxes appear once a cycle exists." />

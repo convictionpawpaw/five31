@@ -10,6 +10,15 @@ export interface Settings {
   tmPercent: number; // 0.85 | 0.90 (derive TM from 1RM inputs)
   includeDeload: boolean; // default for NEW cycles
   liftIncrements: Record<LiftId, number>; // lb: press 5, bench 5, squat 10, deadlift 10
+  /**
+   * User-chosen order the 4 lifts are trained within each week. OPTIONAL:
+   * absent (older rows / older backups) means the classic DAY_ORDER default.
+   * A present value must be a permutation of the 4 lifts; consumers pass it
+   * through `normalizeDayOrder` before use so a malformed value falls back to
+   * the default. Ordering is DERIVED at display/selection time — changing it
+   * re-orders pending workouts instantly with no data migration.
+   */
+  dayOrder?: LiftId[];
   onboardingComplete: boolean;
   schemaVersion: number; // 1
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { AccessoryDef, LiftId, Settings, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
+import { DAY_ORDER, normalizeDayOrder } from '../../core/scheme.ts';
 import { defaultAccessoryIncrement } from '../../core/units.ts';
 import { db } from '../../db/db.ts';
 import {
@@ -86,6 +86,7 @@ export function AccessoriesScreen() {
 
   const { settings, workouts } = data;
   const unitInc = defaultAccessoryIncrement(settings.units);
+  const order = normalizeDayOrder(settings.dayOrder);
 
   const doReorder = async (liftId: LiftId, ids: string[]) => {
     try {
@@ -124,7 +125,7 @@ export function AccessoriesScreen() {
         <p className="label text-mid">Max {MAX_ACTIVE_ACCESSORIES_PER_DAY} per day</p>
       </header>
 
-      {DAY_ORDER.map((liftId) => {
+      {order.map((liftId) => {
         const bucket = byDay.get(liftId)!;
         return (
           <section key={liftId} className="acc__day">

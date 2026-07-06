@@ -65,6 +65,44 @@
   line-height: 1.4;
 }
 
+/* --- Day order (reorderable) ---------------------------------------------- */
+.settings__dayrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap);
+}
+.settings__daypos {
+  width: 1.5em;
+  text-align: center;
+  color: var(--text-low);
+  flex-shrink: 0;
+}
+.settings__dayname {
+  flex: 1;
+  min-width: 0;
+}
+.settings__daymove {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+.settings__move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--text-hi);
+  font-size: var(--fs-lg);
+}
+.settings__move:disabled {
+  opacity: 0.35;
+}
+
 /* --- Inline segmented (settings rows) ------------------------------------- */
 .segmented--inline {
   display: inline-flex;

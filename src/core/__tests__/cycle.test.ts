@@ -112,6 +112,59 @@ describe('buildCycleWorkouts', () => {
     expect(ws[11]!.id).toBe('gen-11');
     expect(new Set(ws.map((w) => w.id)).size).toBe(12); // unique
   });
+
+  it('honors a custom dayOrder for within-week generation order', () => {
+    const custom: LiftId[] = ['squat', 'bench', 'deadlift', 'press'];
+    const ws = buildCycleWorkouts({
+      cycleId: 'c1',
+      cycleNumber: 1,
+      includeDeload: true,
+      units: 'lb',
+      lifts: LB_LIFTS,
+      ids: seqIds(16),
+      dayOrder: custom,
+    });
+    // Still a full cycle...
+    expect(ws).toHaveLength(16);
+    // ...but each week block follows the custom order.
+    expect(ws.slice(0, 4).map((w) => w.liftId)).toEqual(custom);
+    expect(ws.slice(0, 4).map((w) => w.week)).toEqual([1, 1, 1, 1]);
+    expect(ws.slice(12, 16).map((w) => w.liftId)).toEqual(custom);
+    // Weights remain frozen from the per-lift TM regardless of order.
+    const benchWk1 = ws.find((w) => w.liftId === 'bench' && w.week === 1)!;
+    expect(benchWk1.tmUsed).toBe(200);
+    expect(benchWk1.mainSets.filter((s) => s.kind === 'work').map((s) => s.weight)).toEqual([
+      130, 150, 170,
+    ]);
+  });
+
+  it('12 workouts without deload under a custom order too', () => {
+    const custom: LiftId[] = ['squat', 'bench', 'deadlift', 'press'];
+    const ws = buildCycleWorkouts({
+      cycleId: 'c1',
+      cycleNumber: 1,
+      includeDeload: false,
+      units: 'lb',
+      lifts: LB_LIFTS,
+      ids: seqIds(12),
+      dayOrder: custom,
+    });
+    expect(ws).toHaveLength(12);
+    expect(ws.slice(0, 4).map((w) => w.liftId)).toEqual(custom);
+  });
+
+  it('falls back to DAY_ORDER for a malformed dayOrder', () => {
+    const ws = buildCycleWorkouts({
+      cycleId: 'c1',
+      cycleNumber: 1,
+      includeDeload: false,
+      units: 'lb',
+      lifts: LB_LIFTS,
+      ids: seqIds(12),
+      dayOrder: ['squat', 'squat', 'bench', 'press'], // duplicate → invalid
+    });
+    expect(ws.slice(0, 4).map((w) => w.liftId)).toEqual([...DAY_ORDER]);
+  });
 });
 
 // Helper: a completed AMRAP workout for a lift with a given actualReps.
@@ -213,6 +266,23 @@ describe('cycleAdvancePlan', () => {
     }, INCREMENTS);
     const bench = plan.find((p) => p.liftId === 'bench')!;
     expect(bench.recommendation).toBe('increase');
+  });
+
+  it('orders the returned entries by a custom dayOrder (math unchanged)', () => {
+    const custom: LiftId[] = ['squat', 'bench', 'deadlift', 'press'];
+    const workouts: Workout[] = [
+      completedAmrap('press', 1, 5, 6),
+      completedAmrap('bench', 1, 5, 5),
+      completedAmrap('squat', 1, 5, 8),
+      completedAmrap('deadlift', 1, 5, 5),
+    ];
+    const tms = { press: 120, bench: 200, squat: 300, deadlift: 350 };
+    const plan = cycleAdvancePlan(workouts, tms, INCREMENTS, custom);
+    expect(plan.map((p) => p.liftId)).toEqual(custom);
+    // Recommendations are identical to the default-order run.
+    const byLift = Object.fromEntries(plan.map((p) => [p.liftId, p]));
+    expect(byLift.squat!.recommendedTm).toBe(310); // +10, unaffected by ordering
+    expect(byLift.press!.recommendedTm).toBe(125); // +5
   });
 });
 

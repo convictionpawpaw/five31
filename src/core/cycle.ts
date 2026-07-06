@@ -1,5 +1,5 @@
 import type { LiftId, MainSet, WeekNumber, Workout } from './types.ts';
-import { DAY_ORDER } from './scheme.ts';
+import { normalizeDayOrder } from './scheme.ts';
 import { buildMainSets } from './setCalc.ts';
 
 /** The weeks in a cycle, with or without the optional deload week. */
@@ -36,18 +36,27 @@ export interface BuildCycleWorkoutsArgs {
    * Used by `addDeloadPlan` to generate only the deload week.
    */
   weeks?: readonly WeekNumber[];
+  /**
+   * Within-week lift iteration order. Defaults to {@link DAY_ORDER}. Any value
+   * is validated by {@link normalizeDayOrder}, so a malformed order falls back
+   * to the classic default. This is a display/generation-order concern only —
+   * per-lift set weights and `tmUsed` are unaffected.
+   */
+  dayOrder?: readonly LiftId[];
 }
 
 /**
- * Build all workouts for a cycle as `pending`, ordered by week then DAY_ORDER,
- * with every main-set weight and `tmUsed` frozen at generation. Accessory work
- * is left empty here (stamped lazily when a workout transitions to in_progress).
+ * Build all workouts for a cycle as `pending`, ordered by week then day order
+ * (defaulting to DAY_ORDER), with every main-set weight and `tmUsed` frozen at
+ * generation. Accessory work is left empty here (stamped lazily when a workout
+ * transitions to in_progress).
  *
  * Produces 12 workouts without deload, 16 with.
  */
 export function buildCycleWorkouts(args: BuildCycleWorkoutsArgs): Workout[] {
   const { cycleId, cycleNumber, includeDeload, units, lifts, ids } = args;
   const weeks = args.weeks ?? cycleWeeks(includeDeload);
+  const order = normalizeDayOrder(args.dayOrder);
 
   let cursor = 0;
   const nextId = (): string => {
@@ -62,7 +71,7 @@ export function buildCycleWorkouts(args: BuildCycleWorkoutsArgs): Workout[] {
 
   const workouts: Workout[] = [];
   for (const week of weeks) {
-    for (const liftId of DAY_ORDER) {
+    for (const liftId of order) {
       const input = lifts[liftId];
       const mainSets: MainSet[] = buildMainSets(input.tm, week, input.increment);
       workouts.push({
@@ -105,13 +114,18 @@ export interface AdvancePlanEntry {
  * fell short of the target reps (actualReps < targetReps). Otherwise recommend
  * `increase` by the lift's increment. Skipped workouts (and the deload week) are
  * ignored — a skip never forces a hold.
+ *
+ * `dayOrder` controls only the ORDER of the returned entries (a display concern —
+ * the per-lift recommendation math is identical regardless of order). Defaults
+ * to {@link DAY_ORDER}; a malformed value falls back to it via normalization.
  */
 export function cycleAdvancePlan(
   workouts: readonly Workout[],
   currentTms: Record<LiftId, number>,
   increments: Record<LiftId, number>,
+  dayOrder?: readonly LiftId[],
 ): AdvancePlanEntry[] {
-  return DAY_ORDER.map((liftId): AdvancePlanEntry => {
+  return normalizeDayOrder(dayOrder).map((liftId): AdvancePlanEntry => {
     const currentTm = currentTms[liftId];
     const increment = increments[liftId];
 
@@ -185,8 +199,8 @@ export interface DeloadAddPlan {
 
 /**
  * Plan adding a deload week to a cycle that currently has none: generate the 4
- * week-4 workouts (DAY_ORDER) as pending with frozen weights. Fails if the cycle
- * already has any week-4 workout.
+ * week-4 workouts (in the given day order, defaulting to DAY_ORDER) as pending
+ * with frozen weights. Fails if the cycle already has any week-4 workout.
  */
 export function addDeloadPlan(
   workouts: readonly Workout[],
@@ -196,6 +210,7 @@ export function addDeloadPlan(
     units: 'lb' | 'kg';
     lifts: Record<LiftId, CycleLiftInput>;
     ids: (() => string) | readonly string[];
+    dayOrder?: readonly LiftId[];
   },
 ): DeloadAddPlan {
   if (workouts.some((w) => w.week === 4)) {
@@ -209,6 +224,7 @@ export function addDeloadPlan(
     lifts: args.lifts,
     ids: args.ids,
     weeks: [4], // generate only the deload week (consumes exactly 4 ids)
+    dayOrder: args.dayOrder,
   });
   return { addedWorkouts: built };
 }

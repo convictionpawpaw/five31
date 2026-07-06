@@ -78,7 +78,7 @@ export function TodayScreen() {
     );
   }
 
-  const next = selectNextWorkout(workouts);
+  const next = selectNextWorkout(workouts, settings.dayOrder);
   const resolved = isCycleResolved(workouts);
   const last = lastCompletedWorkout(workouts);
 

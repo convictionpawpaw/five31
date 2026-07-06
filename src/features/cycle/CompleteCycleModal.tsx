@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { LiftId, Settings, Workout } from '../../core/types.ts';
-import { DAY_ORDER } from '../../core/scheme.ts';
-import { cycleAdvancePlan, type AdvancePlanEntry } from '../../core/cycle.ts';
+import { normalizeDayOrder } from '../../core/scheme.ts';
+import { cycleAdvancePlan } from '../../core/cycle.ts';
 import { roundToIncrement } from '../../core/rounding.ts';
 import { completeCycle } from '../../db/repo/index.ts';
 import { Button, Modal, NumberStepper, useToast } from '../../components/index.ts';
@@ -37,9 +37,10 @@ export function CompleteCycleModal({
   onDone: () => void;
 }) {
   const toast = useToast();
+  const order = useMemo(() => normalizeDayOrder(settings.dayOrder), [settings.dayOrder]);
   const plan = useMemo(
-    () => cycleAdvancePlan(workouts, currentTms, settings.liftIncrements),
-    [workouts, currentTms, settings.liftIncrements],
+    () => cycleAdvancePlan(workouts, currentTms, settings.liftIncrements, order),
+    [workouts, currentTms, settings.liftIncrements, order],
   );
 
   const [tms, setTms] = useState<Record<LiftId, number>>(() => {
@@ -73,13 +74,11 @@ export function CompleteCycleModal({
     }
   };
 
-  const byLift = new Map<LiftId, AdvancePlanEntry>(plan.map((p) => [p.liftId, p]));
-
   return (
     <Modal open onClose={onClose} title="Complete Cycle">
       <div className="ccmodal">
-        {DAY_ORDER.map((liftId) => {
-          const entry = byLift.get(liftId)!;
+        {plan.map((entry) => {
+          const liftId = entry.liftId;
           const hold = entry.recommendation === 'hold';
           const reason = hold ? missedWeekLabel(workouts, liftId) : null;
           return (
