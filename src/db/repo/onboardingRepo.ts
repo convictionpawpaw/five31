@@ -57,7 +57,19 @@ export interface OnboardingPayload {
  *
  * All-or-nothing: if anything throws, the transaction rolls back and the DB is
  * left empty (onboarding can be retried cleanly).
+ *
+ * Guarded against double-initialization: if a Settings row OR any cycle already
+ * exists, it throws {@link AlreadyInitializedError} inside the transaction (so
+ * nothing is written) rather than silently creating a second active cycle and
+ * corrupting app-wide state.
  */
+export class AlreadyInitializedError extends Error {
+  constructor() {
+    super('Already initialized — use Full Reset first.');
+    this.name = 'AlreadyInitializedError';
+  }
+}
+
 export async function initializeFromOnboarding(payload: OnboardingPayload): Promise<void> {
   const {
     units,
@@ -149,6 +161,13 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     'rw',
     [db.settings, db.liftState, db.tmEvents, db.accessories, db.cycles, db.workouts],
     async () => {
+      // Refuse to write over an already-initialized DB (would create a second
+      // active cycle and corrupt every getActiveCycle() consumer).
+      const existingSettings = await db.settings.get(SETTINGS_ID);
+      const anyCycle = await db.cycles.count();
+      if (existingSettings !== undefined || anyCycle > 0) {
+        throw new AlreadyInitializedError();
+      }
       await db.settings.put(settings);
       await db.liftState.bulkPut(liftStates);
       await db.tmEvents.bulkAdd(tmEvents);

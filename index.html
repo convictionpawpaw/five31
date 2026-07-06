@@ -12,9 +12,11 @@
     <meta name="apple-mobile-web-app-title" content="FIVE31" />
     <meta name="theme-color" content="#060a0b" />
 
-    <!-- Icons (public/ served at base). vite-plugin-pwa injects the manifest link. -->
-    <link rel="icon" href="/five31/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/five31/icons/apple-touch-icon.png" />
+    <!-- Icons (public/ served at base). %BASE_URL% is rebased by Vite at build
+         from vite.config's `base`, so these follow the deploy base automatically
+         (GitHub Pages `/five31/` or a root-hosted Netlify `/`). -->
+    <link rel="icon" href="%BASE_URL%favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>

@@ -6,6 +6,7 @@ import {
   updateAccessory,
   reorderAccessories,
   archiveAccessory,
+  unarchiveAccessory,
   listActiveAccessories,
   MAX_ACTIVE_ACCESSORIES_PER_DAY,
 } from '../repo/accessoryRepo.ts';
@@ -62,6 +63,24 @@ describe('accessoryRepo', () => {
     const active = await listActiveAccessories('bench');
     expect(active[0]!.name).toBe('A2');
     expect(active[0]!.currentWeight).toBe(55);
+  });
+
+  it('unarchive restores a slot but enforces the max-3 cap transactionally (finding 12)', async () => {
+    const a = await addAccessory(newAcc('A'));
+    await addAccessory(newAcc('B'));
+    await addAccessory(newAcc('C'));
+    // Archive one, leaving 2 active + 1 archived → restore is allowed.
+    await archiveAccessory(a.id);
+    await unarchiveAccessory(a.id);
+    expect((await listActiveAccessories('bench')).map((x) => x.name).sort()).toEqual(['A', 'B', 'C']);
+
+    // Now archive A again and add a 3rd active (D) so the day is full with A archived.
+    await archiveAccessory(a.id);
+    await addAccessory(newAcc('D'));
+    expect(await listActiveAccessories('bench')).toHaveLength(3);
+    // Restoring A would make 4 active → must throw at the cap.
+    await expect(unarchiveAccessory(a.id)).rejects.toThrow();
+    expect(await listActiveAccessories('bench')).toHaveLength(3);
   });
 
   it('reorder assigns sequential order by the given id list', async () => {

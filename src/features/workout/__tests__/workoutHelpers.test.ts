@@ -128,4 +128,22 @@ describe('workoutSetPr', () => {
     });
     expect(workoutSetPr([w1, w2], w2)).toBe(false);
   });
+
+  it('does NOT flag a within-cycle "first" as a PR when prior cycles hold the record (finding 5)', () => {
+    // Cycle 1 set a high record; the first Cycle-2 effort is lower. Evaluated
+    // across ALL history it is NOT a PR — but the active-cycle SUBSET (the old
+    // Today bug) would treat it as the first-ever effort and flash a false PR.
+    const c1 = mk('c1', 'press', 'completed', [work(0, 200, 5, true, 8)], {
+      completedAt: '2026-01-01T00:00:00Z',
+      cycleId: 'cycle-1',
+    });
+    const c2 = mk('c2', 'press', 'completed', [work(0, 190, 5, true, 3)], {
+      completedAt: '2026-02-01T00:00:00Z',
+      cycleId: 'cycle-2',
+    });
+    // Full history (the fix): not a record.
+    expect(workoutSetPr([c1, c2], c2)).toBe(false);
+    // Active-cycle-only subset (the bug): would be a false positive.
+    expect(workoutSetPr([c2], c2)).toBe(true);
+  });
 });

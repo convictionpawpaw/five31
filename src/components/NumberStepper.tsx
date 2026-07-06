@@ -29,6 +29,18 @@ function normalize(n: number): number {
 }
 
 /**
+ * Number of decimal places a step implies, so the displayed value never rounds
+ * away a committed fraction (step 2.5 → 1; step 1.25 → 2; integer step → 0).
+ * Capped at 3 to match `normalize`'s precision.
+ */
+function decimalsForStep(step: number): number {
+  if (Number.isInteger(step)) return 0;
+  const s = String(step);
+  const dot = s.indexOf('.');
+  return dot === -1 ? 0 : Math.min(3, s.length - dot - 1);
+}
+
+/**
  * Big +/- stepper with press-and-hold auto-repeat. Finger-friendly (≥48px
  * buttons), clamps to min/max, and shows the value as a large Rajdhani numeral.
  */
@@ -84,7 +96,7 @@ export function NumberStepper({
     [bump, disabled, stop],
   );
 
-  const dp = decimals ?? (Number.isInteger(step) ? 0 : 1);
+  const dp = decimals ?? decimalsForStep(step);
   const display = value.toFixed(dp);
 
   const atMin = value <= min;

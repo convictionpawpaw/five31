@@ -99,6 +99,30 @@ describe('export / import', () => {
     await expect(importBackup(backup)).rejects.toBeInstanceOf(BackupValidationError);
   });
 
+  it('parseBackupJson rejects syntactically-valid non-FIVE31 JSON (no summary crash)', async () => {
+    // Regression (finding 4): the import summary reads data.cycles.length etc.
+    // at render time, so parse MUST reject non-backup JSON up front rather than
+    // returning an object with a missing/undefined `data`.
+    expect(() => parseBackupJson('{}')).toThrow(BackupValidationError);
+    expect(() => parseBackupJson('[]')).toThrow(BackupValidationError);
+    expect(() => parseBackupJson('{"app":"five31","schemaVersion":1}')).toThrow(
+      BackupValidationError,
+    );
+    expect(() =>
+      parseBackupJson('{"app":"five31","schemaVersion":1,"data":{"cycles":[]}}'),
+    ).toThrow(BackupValidationError);
+    expect(() => parseBackupJson('not json')).toThrow(BackupValidationError);
+  });
+
+  it('parseBackupJson accepts a real exported backup and exposes readable arrays', async () => {
+    await seedRichState();
+    const json = JSON.stringify(await exportBackup());
+    const parsed = parseBackupJson(json);
+    // These reads are exactly what the import summary performs — must not throw.
+    expect(Array.isArray(parsed.data.cycles)).toBe(true);
+    expect(parsed.data.workouts.length).toBeGreaterThan(0);
+  });
+
   it('import replaces (does not merge) existing data', async () => {
     await seedRichState();
     const backup = await exportBackup();

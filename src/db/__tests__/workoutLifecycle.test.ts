@@ -127,4 +127,75 @@ describe('workout lifecycle', () => {
     await finishWorkout(bench.id);
     await expect(logMainSet(bench.id, 'work', 0, 5)).rejects.toThrow();
   });
+
+  it('accessory bump adds exactly +increment from an off-grid start (finding 11)', async () => {
+    // Regression: an off-grid currentWeight (52, default increment 5) must bump
+    // to 57 (plain addition), NOT snap onto the increment grid (which gave 55).
+    await initializeFromOnboarding(
+      lbOnboardingPayload({
+        accessories: [
+          { liftDayId: 'bench', name: 'Curl', sets: 3, repRangeMin: 8, repRangeMax: 12, currentWeight: 52, increment: 5 },
+        ],
+      }),
+    );
+    const cycle = await getActiveCycle();
+    const bench = (await getCycleWorkouts(cycle!.id)).find(
+      (w) => w.liftId === 'bench' && w.week === 1,
+    )!;
+    await startWorkout(bench.id);
+    await logMainSet(bench.id, 'work', 2, 8);
+    await logAccessorySet(bench.id, 0, 0, 12);
+    await logAccessorySet(bench.id, 0, 1, 12);
+    await logAccessorySet(bench.id, 0, 2, 12);
+    await finishWorkout(bench.id);
+
+    const curl = await db.accessories.get(
+      (await getWorkout(bench.id))!.accessoryWork[0]!.accessoryId,
+    );
+    expect(curl!.currentWeight).toBe(57); // 52 + 5, offset preserved
+  });
+
+  it('unskip → reopen preserves already-logged accessory reps (finding 16)', async () => {
+    const bench = await onboardWithBenchAccessories();
+    await startWorkout(bench.id);
+    // Log some accessory reps, then skip and unskip.
+    await logAccessorySet(bench.id, 0, 0, 10);
+    await logAccessorySet(bench.id, 0, 1, 11);
+    await skipWorkout(bench.id);
+    await unskipWorkout(bench.id);
+    expect((await getWorkout(bench.id))!.status).toBe('pending');
+
+    // Reopening (via startWorkout OR the first main-set log) must NOT wipe the
+    // logged accessory reps by re-stamping from live defs.
+    await startWorkout(bench.id);
+    const reopened = await getWorkout(bench.id);
+    expect(reopened!.status).toBe('in_progress');
+    expect(reopened!.accessoryWork[0]!.setReps.slice(0, 2)).toEqual([10, 11]);
+  });
+
+  it('logMainSet on an unskipped workout with logged accessories keeps them (finding 16)', async () => {
+    const bench = await onboardWithBenchAccessories();
+    await startWorkout(bench.id);
+    await logAccessorySet(bench.id, 1, 0, 9); // Rows set 1
+    await skipWorkout(bench.id);
+    await unskipWorkout(bench.id);
+    // Re-enter via a main-set log (auto-start branch) — accessory reps survive.
+    await logMainSet(bench.id, 'work', 0, 5);
+    const w = await getWorkout(bench.id);
+    expect(w!.status).toBe('in_progress');
+    expect(w!.accessoryWork[1]!.setReps[0]).toBe(9);
+  });
+
+  it('re-stamps accessoryWork when an unskipped workout had NO logged reps', async () => {
+    // The preservation guard must not freeze a snapshot that carries no data:
+    // a start with empty reps should still reflect current def weights.
+    const bench = await onboardWithBenchAccessories();
+    await startWorkout(bench.id); // stamps empty accessoryWork
+    await skipWorkout(bench.id);
+    await unskipWorkout(bench.id);
+    await startWorkout(bench.id);
+    const w = await getWorkout(bench.id);
+    expect(w!.accessoryWork.map((a) => a.name)).toEqual(['Dips', 'Rows']);
+    expect(w!.accessoryWork.every((a) => a.setReps.every((r) => r === null))).toBe(true);
+  });
 });

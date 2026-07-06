@@ -1,10 +1,12 @@
 /**
  * The result of a share attempt, so callers can toast the right message.
- * - 'shared': handed to the OS share sheet.
+ * - 'shared': handed to the OS share sheet AND accepted by the user.
  * - 'downloaded': fell back to an <a download> blob.
+ * - 'cancelled': the user dismissed the share sheet without picking a target
+ *   (no file was saved) — callers must NOT report success.
  * - 'unsupported': no browser environment (SSR/test) — nothing happened.
  */
-export type ShareResult = 'shared' | 'downloaded' | 'unsupported';
+export type ShareResult = 'shared' | 'downloaded' | 'cancelled' | 'unsupported';
 
 /**
  * Share a backup JSON string. Prefers the Web Share API with a file attachment
@@ -33,24 +35,25 @@ export async function shareBackup(json: string, filename: string): Promise<Share
         return 'shared';
       }
     } catch (err) {
-      // User cancel (AbortError) → do NOT fall back to a download.
-      if (err instanceof DOMException && err.name === 'AbortError') return 'shared';
+      // User cancel (AbortError): report 'cancelled' (no file was saved) and do
+      // NOT fall back to a download — the user deliberately backed out.
+      if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
       // Any other share failure falls through to the download path.
     }
   }
 
   // Fallback: trigger a download.
   const url = URL.createObjectURL(blob);
-  try {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Defer revocation: click() only QUEUES the download navigation; WebKit fails
+  // to fetch an already-revoked blob URL if we revoke synchronously (classic
+  // "WebKitBlobResource error 1"). FileSaver.js delays for the same reason.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return 'downloaded';
 }
 

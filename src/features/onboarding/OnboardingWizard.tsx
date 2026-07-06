@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { OnboardingPayload } from '../../db/repo/onboardingRepo.ts';
-import { initializeFromOnboarding } from '../../db/repo/index.ts';
+import { AlreadyInitializedError } from '../../db/repo/onboardingRepo.ts';
+import { getSettings, initializeFromOnboarding } from '../../db/repo/index.ts';
 import { Button, useToast } from '../../components/index.ts';
 import {
   initialOnboardingState,
@@ -44,6 +46,14 @@ export function OnboardingWizard() {
   const [state, setState] = useState<OnboardingState>(() => initialOnboardingState('lb'));
   const [submitting, setSubmitting] = useState(false);
 
+  // If the DB is already initialized (e.g. a stale tab still parked on the
+  // wizard), bounce back to the app instead of letting a resubmit corrupt state.
+  const settings = useLiveQuery(() => getSettings(), []);
+  const alreadyInitialized = settings?.onboardingComplete === true;
+  useEffect(() => {
+    if (alreadyInitialized) navigate('/', { replace: true });
+  }, [alreadyInitialized, navigate]);
+
   const canAdvance = isStepValid(step, state);
 
   const goNext = () => {
@@ -60,6 +70,11 @@ export function OnboardingWizard() {
       navigate('/', { replace: true });
     } catch (err) {
       setSubmitting(false);
+      if (err instanceof AlreadyInitializedError) {
+        toast.show('Already initialized', 'info');
+        navigate('/', { replace: true });
+        return;
+      }
       const msg = err instanceof Error ? err.message : 'Failed to initialize.';
       toast.show(msg, 'danger');
     }

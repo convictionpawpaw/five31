@@ -158,8 +158,11 @@ export function buildTmStepSeries(
   targetUnits: Units,
 ): TmStepSeries {
   const ordered = [...cycles].sort((a, b) => a.number - b.number);
-  const points = ordered.map((c) => ({
-    x: c.number,
+  // x MUST be the 0-based array index (chartScale.projectX assumes x runs
+  // 0..n-1); the `C${number}` label carries the cycle identity. Using c.number
+  // (1-based) would push the newest cycle's TM point off the right edge.
+  const points = ordered.map((c, i) => ({
+    x: i,
     y: convertWeight(c.tms[liftId], c.units, targetUnits),
     label: `C${c.number}`,
   }));

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Settings, Workout } from '../../core/types.ts';
+import { db } from '../../db/db.ts';
 import {
   getActiveCycle,
   getCycleWorkouts,
@@ -25,6 +26,8 @@ interface TodayData {
   settings: Settings | null;
   cycleNumber: number | null;
   workouts: Workout[];
+  /** Every workout across all cycles — needed for a true cross-cycle PR check. */
+  allWorkouts: Workout[];
   lastBodyweight: number | null;
 }
 
@@ -32,12 +35,14 @@ async function readToday(): Promise<TodayData> {
   const settings = (await getSettings()) ?? null;
   const cycle = await getActiveCycle();
   const workouts = cycle ? await getCycleWorkouts(cycle.id) : [];
+  const allWorkouts = await db.workouts.toArray();
   const bw = await listBodyweight();
   const lastBodyweight = bw.length > 0 ? bw[bw.length - 1]!.weight : null;
   return {
     settings,
     cycleNumber: cycle?.number ?? null,
     workouts,
+    allWorkouts,
     lastBodyweight,
   };
 }
@@ -64,7 +69,7 @@ export function TodayScreen() {
     );
   }
 
-  const { settings, cycleNumber, workouts, lastBodyweight } = data;
+  const { settings, cycleNumber, workouts, allWorkouts, lastBodyweight } = data;
   if (settings === null || cycleNumber === null) {
     return (
       <div className="today">
@@ -98,7 +103,7 @@ export function TodayScreen() {
         </HudPanel>
       )}
 
-      {last && <LastWorkoutSummary workout={last} workouts={workouts} />}
+      {last && <LastWorkoutSummary workout={last} workouts={allWorkouts} />}
 
       <BodyweightQuickLog
         units={settings.units}

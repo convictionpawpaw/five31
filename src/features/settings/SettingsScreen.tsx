@@ -289,6 +289,7 @@ function DataSection({ toast }: { toast: ToastApi }) {
       const result = await shareBackup(json, defaultBackupFilename());
       if (result === 'shared') toast.show('Backup shared', 'success');
       else if (result === 'downloaded') toast.show('Backup downloaded', 'success');
+      else if (result === 'cancelled') toast.show('Export cancelled', 'info');
       else toast.show('Sharing not supported here', 'danger');
     } catch (err) {
       toast.show(err instanceof Error ? err.message : 'Export failed', 'danger');
@@ -328,7 +329,7 @@ function DataSection({ toast }: { toast: ToastApi }) {
   };
 
   const summary = pending
-    ? `${pending.data.cycles.length} cycles · ${pending.data.workouts.length} workouts · ${pending.data.accessories.length} accessories`
+    ? `${pending.data?.cycles?.length ?? 0} cycles · ${pending.data?.workouts?.length ?? 0} workouts · ${pending.data?.accessories?.length ?? 0} accessories`
     : '';
 
   return (
@@ -481,8 +482,12 @@ function Footer({
     try {
       await seedDemoData(n);
       toast.show(`Seeded ${n} cycles`, 'success');
-      // Reload so every screen re-reads the fresh DB cleanly.
-      if (typeof location !== 'undefined') location.reload();
+      // Reload so every screen re-reads the fresh DB cleanly. Force the hash to
+      // Today first so a reload can never boot into the onboarding wizard.
+      if (typeof location !== 'undefined') {
+        location.hash = '#/';
+        location.reload();
+      }
     } catch (err) {
       setBusy(false);
       toast.show(err instanceof Error ? err.message : 'Seed failed', 'danger');

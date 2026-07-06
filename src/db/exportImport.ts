@@ -43,15 +43,29 @@ export class BackupValidationError extends Error {
   }
 }
 
+/** The seven data arrays every FIVE31 backup carries. */
+const BACKUP_TABLES = [
+  'settings',
+  'liftState',
+  'cycles',
+  'workouts',
+  'accessories',
+  'bodyweight',
+  'tmEvents',
+] as const;
+
 /**
- * Replace the entire database from a backup file. Validates the discriminator
- * and schema version, migrates the payload forward, then in ONE transaction
- * clears all 7 tables and bulk-adds everything. All-or-nothing.
+ * Validate that an unknown value is a well-formed FIVE31 backup: the `five31`
+ * discriminator, a numeric non-future schemaVersion, and a `data` object whose
+ * seven tables are all arrays. Throws {@link BackupValidationError} on any
+ * failure. Returns the value narrowed to {@link BackupFile} — after this the
+ * import summary can safely read `data.*.length` without a render-time crash.
  */
-export async function importBackup(file: BackupFile): Promise<void> {
-  if (!file || typeof file !== 'object') {
+export function validateBackup(value: unknown): BackupFile {
+  if (!value || typeof value !== 'object') {
     throw new BackupValidationError('Backup is not an object.');
   }
+  const file = value as Partial<BackupFile>;
   if (file.app !== BACKUP_APP) {
     throw new BackupValidationError(`Not a FIVE31 backup (app='${String(file.app)}').`);
   }
@@ -66,6 +80,22 @@ export async function importBackup(file: BackupFile): Promise<void> {
   if (!file.data || typeof file.data !== 'object') {
     throw new BackupValidationError('Backup has no data.');
   }
+  const data = file.data as Record<string, unknown>;
+  for (const table of BACKUP_TABLES) {
+    if (!Array.isArray(data[table])) {
+      throw new BackupValidationError(`Backup is missing the '${table}' array.`);
+    }
+  }
+  return file as BackupFile;
+}
+
+/**
+ * Replace the entire database from a backup file. Validates the discriminator
+ * and schema version, migrates the payload forward, then in ONE transaction
+ * clears all 7 tables and bulk-adds everything. All-or-nothing.
+ */
+export async function importBackup(file: BackupFile): Promise<void> {
+  validateBackup(file);
 
   const data = migrateBackup(file.data, file.schemaVersion);
 
@@ -95,7 +125,12 @@ export async function importBackup(file: BackupFile): Promise<void> {
   );
 }
 
-/** Parse a JSON string into a BackupFile, throwing a validation error on bad JSON. */
+/**
+ * Parse a JSON string into a fully-validated BackupFile. Throws a
+ * {@link BackupValidationError} on malformed JSON OR on any shape violation, so
+ * callers can safely read `.data.*.length` (e.g. for an import summary) without
+ * a render-time crash on a non-FIVE31 file.
+ */
 export function parseBackupJson(json: string): BackupFile {
   let parsed: unknown;
   try {
@@ -103,5 +138,5 @@ export function parseBackupJson(json: string): BackupFile {
   } catch {
     throw new BackupValidationError('Backup file is not valid JSON.');
   }
-  return parsed as BackupFile;
+  return validateBackup(parsed);
 }

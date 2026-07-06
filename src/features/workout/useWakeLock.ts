@@ -23,6 +23,11 @@ export function useWakeLock(active: boolean): void {
           void sentinel.release();
           return;
         }
+        // The OS auto-releases the sentinel when the tab is backgrounded. Listen
+        // for that so we null our ref and can re-acquire on the next visible.
+        sentinel.addEventListener('release', () => {
+          if (sentinelRef.current === sentinel) sentinelRef.current = null;
+        });
         sentinelRef.current = sentinel;
       } catch {
         // Denied (low battery, permissions, unsupported) — silently no-op.
@@ -30,7 +35,11 @@ export function useWakeLock(active: boolean): void {
     };
 
     const onVisibility = (): void => {
-      if (document.visibilityState === 'visible' && sentinelRef.current === null) {
+      // Re-acquire whenever we're visible and hold no live sentinel — either the
+      // ref is null, or it points at an already-released (stale) sentinel.
+      const held = sentinelRef.current;
+      if (document.visibilityState === 'visible' && (held === null || held.released)) {
+        sentinelRef.current = null;
         void acquire();
       }
     };

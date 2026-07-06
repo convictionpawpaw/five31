@@ -9,6 +9,7 @@ import {
   archiveAccessory,
   getSettings,
   reorderAccessories,
+  unarchiveAccessory,
   updateAccessory,
   MAX_ACTIVE_ACCESSORIES_PER_DAY,
   type NewAccessoryInput,
@@ -105,14 +106,11 @@ export function AccessoriesScreen() {
     }
   };
 
-  const doUnarchive = async (a: AccessoryDef, activeCount: number) => {
-    if (activeCount >= MAX_ACTIVE_ACCESSORIES_PER_DAY) {
-      toast.show(`${LIFT_NAMES[a.liftDayId]} already has ${MAX_ACTIVE_ACCESSORIES_PER_DAY} active`, 'danger');
-      return;
-    }
+  const doUnarchive = async (a: AccessoryDef) => {
     try {
-      // Unarchive by clearing archivedAt via updateAccessory-adjacent put.
-      await db.accessories.update(a.id, { archivedAt: undefined });
+      // The cap is re-checked transactionally inside the repo — the UI count is
+      // only an early hint and can be stale on rapid taps.
+      await unarchiveAccessory(a.id);
       toast.show(`${a.name} restored`, 'success');
     } catch (err) {
       toast.show(err instanceof Error ? err.message : 'Restore failed', 'danger');
@@ -169,7 +167,7 @@ export function AccessoriesScreen() {
               <ArchivedSection
                 items={bucket.archived}
                 activeCount={bucket.active.length}
-                onUnarchive={(a) => void doUnarchive(a, bucket.active.length)}
+                onUnarchive={(a) => void doUnarchive(a)}
               />
             )}
           </section>
@@ -383,7 +381,6 @@ function AccessoryModal({
   const [form, setForm] = useState<AccForm>(initial);
   const [busy, setBusy] = useState(false);
   const weightStep = units === 'kg' ? 1.25 : 5;
-  const decimals = units === 'kg' ? 1 : 0;
 
   const patch = <K extends keyof AccForm>(key: K, value: AccForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -455,7 +452,6 @@ function AccessoryModal({
             onChange={(v) => patch('currentWeight', v)}
             step={weightStep}
             min={0}
-            decimals={decimals}
             suffix={units.toUpperCase()}
             label="Current weight"
           />
@@ -468,7 +464,6 @@ function AccessoryModal({
             onChange={(v) => patch('increment', v)}
             step={weightStep}
             min={weightStep}
-            decimals={decimals}
             suffix={units.toUpperCase()}
             label="Increment"
           />

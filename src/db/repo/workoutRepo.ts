@@ -1,6 +1,5 @@
 import type { AccessoryWork, LiftId, MainSet, Workout } from '../../core/types.ts';
 import { buildAccessoryWork, evaluateAccessoryProgression } from '../../core/accessories.ts';
-import { roundToIncrement } from '../../core/rounding.ts';
 import { db } from '../db.ts';
 
 /** Read a single workout by id. */
@@ -28,6 +27,21 @@ async function stampAccessoryWork(liftDayId: LiftId): Promise<AccessoryWork[]> {
     .map((d) => buildAccessoryWork(d));
 }
 
+/** Whether any accessory set in the given accessoryWork has a logged rep. */
+function hasLoggedAccessoryReps(accessoryWork: readonly AccessoryWork[]): boolean {
+  return accessoryWork.some((a) => a.setReps.some((r) => r !== null && r !== undefined));
+}
+
+/**
+ * The accessoryWork to use when transitioning a workout to in_progress. Preserves
+ * any existing snapshot that already carries logged reps (so an unskip→reopen
+ * never wipes entered accessory data); otherwise (re)stamps fresh from live defs.
+ */
+async function accessoryWorkForStart(w: Workout): Promise<AccessoryWork[]> {
+  if (hasLoggedAccessoryReps(w.accessoryWork)) return w.accessoryWork;
+  return stampAccessoryWork(w.liftId);
+}
+
 /**
  * Transition a pending workout to in_progress: stamp startedAt and materialize
  * accessoryWork from the day's active AccessoryDefs. No-op if already started.
@@ -39,7 +53,7 @@ export async function startWorkout(id: string): Promise<void> {
     if (w.status !== 'pending') {
       throw new Error(`Cannot start workout ${id} from status '${w.status}'.`);
     }
-    const accessoryWork = await stampAccessoryWork(w.liftId);
+    const accessoryWork = await accessoryWorkForStart(w);
     await db.workouts.put({
       ...w,
       status: 'in_progress',
@@ -71,7 +85,7 @@ export async function logMainSet(
 
     // First interaction on a pending workout starts it.
     if (w.status === 'pending') {
-      const accessoryWork = await stampAccessoryWork(w.liftId);
+      const accessoryWork = await accessoryWorkForStart(w);
       next = { ...w, status: 'in_progress', startedAt: now, accessoryWork };
     }
 
@@ -130,7 +144,9 @@ export async function setNotes(workoutId: string, notes: string): Promise<void> 
  *  - status → completed, stamp completedAt.
  *  - for each accessoryWork entry, evaluate core progression; where it passes,
  *    set progressed = true AND bump the matching (still-present) AccessoryDef's
- *    currentWeight += increment (re-rounded to the increment).
+ *    currentWeight by exactly +increment (plain addition — the user's own grid
+ *    offset is preserved, e.g. 52 + 5 = 57, never re-snapped to the increment
+ *    grid, honoring the plan's "+increment when all sets hit top" promise).
  *
  * Progression happens ONLY on the in_progress → completed transition, so a
  * double-finish is rejected (throws) — currentWeight can never bump twice.
@@ -148,10 +164,11 @@ export async function finishWorkout(id: string): Promise<void> {
       accessoryWork.push({ ...a, progressed });
       if (!progressed) continue;
 
-      // Bump the live def (if it still exists) exactly once.
+      // Bump the live def (if it still exists) exactly once. Plain addition:
+      // +increment from the current weight, preserving any off-grid offset.
       const def = await db.accessories.get(a.accessoryId);
       if (def) {
-        const currentWeight = roundToIncrement(def.currentWeight + def.increment, def.increment);
+        const currentWeight = def.currentWeight + def.increment;
         await db.accessories.put({ ...def, currentWeight });
       }
     }

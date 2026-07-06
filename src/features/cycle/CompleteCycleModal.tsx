@@ -102,7 +102,6 @@ export function CompleteCycleModal({
                   onChange={(v) => setTm(liftId, v)}
                   step={step}
                   min={0}
-                  decimals={settings.units === 'kg' ? 1 : 0}
                   suffix={settings.units.toUpperCase()}
                   label={`${LIFT_NAMES[liftId]} new TM`}
                 />

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { AccessoryWork, MainSet, Settings, Workout } from '../../core/types.ts';
 import { epley } from '../../core/e1rm.ts';
 import { amrapTargetForPr } from '../../core/prs.ts';
+import { buildAccessoryWork } from '../../core/accessories.ts';
 import { db } from '../../db/db.ts';
 import {
   finishWorkout,
@@ -27,6 +28,12 @@ interface WorkoutData {
   settings: Settings | null;
   workout: Workout | null;
   liftWorkouts: Workout[];
+  /**
+   * Read-only accessory PREVIEW for a still-pending workout, built on the fly
+   * from the day's current AccessoryDefs (never persisted). Empty once the
+   * workout is in_progress (then the frozen accessoryWork snapshot is used).
+   */
+  accessoryPreview: AccessoryWork[];
   cycleActive: boolean;
 }
 
@@ -35,13 +42,23 @@ function readWorkout(id: string) {
     const settings = (await getSettings()) ?? null;
     const workout = (await db.workouts.get(id)) ?? null;
     let liftWorkouts: Workout[] = [];
+    let accessoryPreview: AccessoryWork[] = [];
     let cycleActive = false;
     if (workout) {
       liftWorkouts = await db.workouts.where('liftId').equals(workout.liftId).toArray();
       const cycle = await db.cycles.get(workout.cycleId);
       cycleActive = cycle?.status === 'active';
+      // For a pending workout, preview the accessories from live defs so the
+      // user sees what they'll do — WITHOUT starting the workout (no persist).
+      if (workout.status === 'pending') {
+        const defs = await db.accessories.where('liftDayId').equals(workout.liftId).toArray();
+        accessoryPreview = defs
+          .filter((d) => d.archivedAt === undefined)
+          .sort((a, b) => a.order - b.order)
+          .map((d) => buildAccessoryWork(d));
+      }
     }
-    return { settings, workout, liftWorkouts, cycleActive };
+    return { settings, workout, liftWorkouts, accessoryPreview, cycleActive };
   };
 }
 
@@ -52,21 +69,12 @@ export function WorkoutScreen() {
   const data = useLiveQuery(readWorkout(id ?? ''), [id]);
 
   const workout = data?.workout ?? null;
-  const isPending = workout?.status === 'pending';
 
-  // Hold the screen awake while an unfinished workout is open.
+  // Hold the screen awake while an unfinished workout is open. NOTE: merely
+  // viewing a pending workout must NOT start it — the transition to in_progress
+  // happens only on the first real logging interaction (see ActiveBody).
   const active = workout !== null && (workout.status === 'pending' || workout.status === 'in_progress');
   useWakeLock(active);
-
-  // A pending workout is stamped to in_progress on mount so accessoryWork
-  // materializes immediately (rather than only on the first set log).
-  useEffect(() => {
-    if (id && isPending) {
-      void startWorkout(id).catch(() => {
-        /* another interaction may have started it already */
-      });
-    }
-  }, [id, isPending]);
 
   if (data === undefined) {
     return (
@@ -105,6 +113,7 @@ export function WorkoutScreen() {
         <ActiveBody
           workout={workout}
           liftWorkouts={data.liftWorkouts}
+          accessoryPreview={data.accessoryPreview}
           onFinished={(msg) => {
             navigate('/');
             toast.show(msg, 'success');
@@ -140,11 +149,13 @@ function WorkoutHeader({ workout }: { workout: Workout }) {
 function ActiveBody({
   workout,
   liftWorkouts,
+  accessoryPreview,
   onFinished,
   onSkipped,
 }: {
   workout: Workout;
   liftWorkouts: Workout[];
+  accessoryPreview: AccessoryWork[];
   onFinished: (msg: string) => void;
   onSkipped: () => void;
 }) {
@@ -152,17 +163,36 @@ function ActiveBody({
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const isPending = workout.status === 'pending';
+
   const warmups = workout.mainSets.filter((s) => s.kind === 'warmup');
   const workSets = workout.mainSets.filter((s) => s.kind === 'work');
   const amrap = amrapSet(workout);
   const nonAmrapWork = workSets.filter((s) => !s.amrap);
 
+  // While pending the frozen accessoryWork is empty; show the live preview.
+  const accessories = workout.accessoryWork.length > 0 ? workout.accessoryWork : accessoryPreview;
+
   const unlogged = countUnloggedSets(workout);
+
+  /**
+   * Ensure the workout is started before an accessory/note interaction. Main-set
+   * logging auto-starts inside logMainSet; accessory logging requires an existing
+   * accessoryWork snapshot, and note-saving on a pending workout would otherwise
+   * write to a workout the user only viewed. Starting here is the FIRST real
+   * logging interaction, so the pending→in_progress transition is intentional.
+   */
+  const ensureStarted = async () => {
+    if (workout.status === 'pending') await startWorkout(workout.id);
+  };
 
   const doFinish = async () => {
     if (busy) return;
     setBusy(true);
     try {
+      // Finishing is a real logging action; start first if still pending so the
+      // accessoryWork snapshot exists and finishWorkout's in_progress guard holds.
+      await ensureStarted();
       await finishWorkout(workout.id);
       const progressed = workout.accessoryWork.filter((a) =>
         allSetsHitMax(a),
@@ -210,16 +240,23 @@ function ActiveBody({
         {amrap && <AmrapRow workout={workout} set={amrap} liftWorkouts={liftWorkouts} />}
       </section>
 
-      {workout.accessoryWork.length > 0 && (
+      {accessories.length > 0 && (
         <section className="workout__section">
           <h2 className="workout__section-title label">Accessories</h2>
-          {workout.accessoryWork.map((a, i) => (
-            <AccessoryRow key={a.accessoryId} workout={workout} accessory={a} accessoryIndex={i} />
+          {accessories.map((a, i) => (
+            <AccessoryRow
+              key={a.accessoryId}
+              workout={workout}
+              accessory={a}
+              accessoryIndex={i}
+              preview={isPending}
+              ensureStarted={ensureStarted}
+            />
           ))}
         </section>
       )}
 
-      <NotesField workout={workout} />
+      <NotesField workout={workout} ensureStarted={ensureStarted} />
 
       <div className="workout__finishbar-spacer" />
       <div className="workout__finishbar safe-bottom">
@@ -446,10 +483,15 @@ function AccessoryRow({
   workout,
   accessory,
   accessoryIndex,
+  preview,
+  ensureStarted,
 }: {
   workout: Workout;
   accessory: AccessoryWork;
   accessoryIndex: number;
+  /** True while showing the read-only preview of a pending workout. */
+  preview: boolean;
+  ensureStarted: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const willProgress = allSetsHitMax(accessory);
@@ -473,11 +515,13 @@ function AccessoryRow({
             setIndex={si}
             reps={reps}
             editing={editing === si}
+            preview={preview}
+            ensureStarted={ensureStarted}
             onEdit={() => setEditing((cur) => (cur === si ? null : si))}
           />
         ))}
       </div>
-      {editing !== null && (
+      {editing !== null && !preview && (
         <div className="accrow__editor">
           <NumberStepper
             value={accessory.setReps[editing] ?? accessory.repRangeMax}
@@ -502,6 +546,8 @@ function AccessoryChip({
   setIndex,
   reps,
   editing,
+  preview,
+  ensureStarted,
   onEdit,
 }: {
   workout: Workout;
@@ -510,13 +556,21 @@ function AccessoryChip({
   setIndex: number;
   reps: number | null;
   editing: boolean;
+  preview: boolean;
+  ensureStarted: () => Promise<void>;
   onEdit: () => void;
 }) {
   const logged = reps !== null;
-  const onTap = () => {
+  const onTap = async () => {
+    if (preview) {
+      // First interaction on a pending workout starts it; the live query then
+      // re-renders with the real accessoryWork snapshot to log against.
+      await ensureStarted();
+      return;
+    }
     if (!logged) {
       // First tap logs top-of-range reps.
-      void logAccessorySet(workout.id, accessoryIndex, setIndex, accessory.repRangeMax);
+      await logAccessorySet(workout.id, accessoryIndex, setIndex, accessory.repRangeMax);
     } else {
       onEdit();
     }
@@ -525,7 +579,7 @@ function AccessoryChip({
     <button
       type="button"
       className={`accchip${logged ? ' is-logged' : ''}${editing ? ' is-editing' : ''}`}
-      onClick={onTap}
+      onClick={() => void onTap()}
       aria-label={`Set ${setIndex + 1}`}
     >
       <span className="num accchip__reps">{logged ? reps : '·'}</span>
@@ -537,9 +591,24 @@ function AccessoryChip({
 // Notes
 // ---------------------------------------------------------------------------
 
-function NotesField({ workout }: { workout: Workout }) {
+function NotesField({
+  workout,
+  ensureStarted,
+}: {
+  workout: Workout;
+  ensureStarted: () => Promise<void>;
+}) {
   const [open, setOpen] = useState((workout.notes ?? '').length > 0);
   const [text, setText] = useState(workout.notes ?? '');
+
+  const save = async () => {
+    // Saving a note is a real logging interaction; start the workout first so we
+    // never write a note to a workout that was only viewed. Skip the write when
+    // there is nothing to save on a still-pending workout.
+    if (workout.status === 'pending' && text.trim().length === 0) return;
+    await ensureStarted();
+    await setNotes(workout.id, text);
+  };
 
   return (
     <section className="workout__section">
@@ -558,7 +627,7 @@ function NotesField({ workout }: { workout: Workout }) {
           value={text}
           placeholder="How did it feel?"
           onChange={(e) => setText(e.target.value)}
-          onBlur={() => void setNotes(workout.id, text)}
+          onBlur={() => void save()}
           rows={3}
         />
       )}

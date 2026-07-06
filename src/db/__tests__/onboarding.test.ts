@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { resetDb, lbOnboardingPayload } from './setup.ts';
-import { initializeFromOnboarding } from '../repo/onboardingRepo.ts';
+import { AlreadyInitializedError, initializeFromOnboarding } from '../repo/onboardingRepo.ts';
 import { getActiveCycle, getCycleWorkouts } from '../repo/cycleRepo.ts';
 import { getSettings } from '../repo/settingsRepo.ts';
 import { getAllLiftStates } from '../repo/liftStateRepo.ts';
@@ -81,6 +81,27 @@ describe('initializeFromOnboarding', () => {
     expect(bench.map((a) => a.order)).toEqual([0, 1]);
     const press = await db.accessories.where('liftDayId').equals('press').toArray();
     expect(press.map((a) => a.order)).toEqual([0]);
+  });
+
+  it('refuses a second initialization and leaves the first state untouched (finding 2)', async () => {
+    await initializeFromOnboarding(lbOnboardingPayload());
+    const firstCycle = await getActiveCycle();
+
+    // A second submit (e.g. a stale tab re-running the wizard) must throw and
+    // write nothing — no duplicate active cycle, accessories, or TmEvents.
+    await expect(
+      initializeFromOnboarding(lbOnboardingPayload({ trainingMaxes: { press: 999, bench: 999, squat: 999, deadlift: 999 } })),
+    ).rejects.toBeInstanceOf(AlreadyInitializedError);
+
+    expect(await db.cycles.count()).toBe(1);
+    const active = await db.cycles.where('status').equals('active').toArray();
+    expect(active).toHaveLength(1);
+    expect(active[0]!.id).toBe(firstCycle!.id);
+    // TMs untouched (the rejected payload's 999s never landed).
+    const settings = await getSettings();
+    expect(settings!.units).toBe('lb');
+    const states = await getAllLiftStates();
+    expect(states.find((s) => s.liftId === 'squat')!.trainingMax).toBe(300);
   });
 
   it('is all-or-nothing (empty DB on failure inside the transaction)', async () => {

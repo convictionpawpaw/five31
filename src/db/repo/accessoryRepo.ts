@@ -116,3 +116,26 @@ export async function archiveAccessory(id: string): Promise<void> {
     await db.accessories.put({ ...current, archivedAt: new Date().toISOString() });
   });
 }
+
+/**
+ * Restore an archived accessory (clears archivedAt). Re-checks the max-active
+ * cap INSIDE the transaction — mirroring {@link addAccessory} — so two rapid
+ * restore taps reading the same stale UI count cannot both slip past the cap.
+ */
+export async function unarchiveAccessory(id: string): Promise<void> {
+  await db.transaction('rw', db.accessories, async () => {
+    const current = await db.accessories.get(id);
+    if (!current) throw new Error(`Accessory ${id} not found.`);
+    if (current.archivedAt === undefined) return; // already active
+    const existing = await db.accessories.where('liftDayId').equals(current.liftDayId).toArray();
+    const active = existing.filter((a) => a.archivedAt === undefined);
+    if (active.length >= MAX_ACTIVE_ACCESSORIES_PER_DAY) {
+      throw new Error(
+        `Cannot restore accessory: ${current.liftDayId} already has ${MAX_ACTIVE_ACCESSORIES_PER_DAY} active accessories.`,
+      );
+    }
+    const { archivedAt: _drop, ...rest } = current;
+    void _drop;
+    await db.accessories.put(rest);
+  });
+}

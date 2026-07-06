@@ -21,13 +21,17 @@ npm run icons     # regenerate app icons from src/assets/icon.svg (sharp)
 
 ## First-time deploy (GitHub Pages)
 
-The Vite `base` is `/five31/`, so the app is served from a repo named `five31`.
+The default Vite `base` is `/five31/`, so the app is served from a repo named `five31`.
 
 1. Create a **public** GitHub repo named `five31` (Pages is free only on public repos).
-2. Push this project to its `main` branch.
+2. Push this project. The deploy workflow triggers on a push to **either** `main`
+   or `master`, so whatever your local default branch is, the first push deploys.
+   (Check yours with `git branch --show-current`. If you prefer `main`, rename
+   first: `git branch -m master main`.)
 3. In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-4. The `.github/workflows/deploy.yml` workflow runs on every push to `main`
-   (`npm ci → test → build → deploy`). When it finishes, the app is live at:
+4. The `.github/workflows/deploy.yml` workflow runs on every push to `main`/`master`
+   (`npm ci → test → build → deploy`), and can also be run manually from the
+   **Actions** tab (workflow_dispatch). When it finishes, the app is live at:
 
    ```
    https://<your-username>.github.io/five31/
@@ -45,13 +49,22 @@ The Vite `base` is `/five31/`, so the app is served from a repo named `five31`.
 ## Netlify Drop fallback
 
 If you'd rather not use GitHub Pages, you can drag-and-drop the build to
-[Netlify Drop](https://app.netlify.com/drop):
+[Netlify Drop](https://app.netlify.com/drop), which serves from the domain root.
 
-1. In `vite.config.ts`, change `base: '/five31/'` to `base: '/'`.
-2. `npm run build`.
-3. Drag the `dist/` folder onto Netlify Drop.
+The deploy base is **env-driven** (`FIVE31_BASE`, default `/five31/`), and every
+base-relative URL — manifest icons, `start_url`/`scope`, the service-worker
+`navigateFallback`, and the `index.html` icon links (via `%BASE_URL%`) — is
+derived from it. So a root-hosted build is a one-variable change; do **not** just
+edit `base` by hand (that would leave stale `/five31/` paths in the manifest and
+SW and break offline support):
 
-(Remember to revert `base` back to `/five31/` if you go back to GitHub Pages.)
+```bash
+FIVE31_BASE=/ npm run build   # PowerShell: $env:FIVE31_BASE='/'; npm run build
+```
+
+Then drag the `dist/` folder onto Netlify Drop. Everything (icons, Add-to-Home-
+Screen, and the offline service worker) resolves against `/`. Omit the variable
+to go back to a `/five31/` GitHub Pages build — no file edits needed.
 
 ## Notes
 

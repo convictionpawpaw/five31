@@ -2,7 +2,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # This repo's default branch may be `master` or `main` depending on the git
+    # version it was created with; trigger on either so the first deploy runs.
+    branches: [main, master]
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 

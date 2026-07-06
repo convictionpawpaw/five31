@@ -47,7 +47,6 @@ export function TmOverrideModal({
           onChange={setTm}
           step={step}
           min={0}
-          decimals={units === 'kg' ? 1 : 0}
           suffix={units.toUpperCase()}
           label="Training max"
         />
