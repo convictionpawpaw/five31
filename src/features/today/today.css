@@ -92,3 +92,27 @@
 .today__bw-row .stepper {
   flex: 1;
 }
+
+/* --- StrongLifts hero (three lifts, one session) ------------------------- */
+.today__sllifts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.today__sllift {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.today__sllift-load {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+/* Multiple rows in the Last Session panel need breathing room. */
+.today__last .today__last-row + .today__last-row {
+  margin-top: var(--space-2);
+}

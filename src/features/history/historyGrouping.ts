@@ -1,12 +1,13 @@
-import type { Cycle, SlLiftId, Units, Workout } from '../../core/types.ts';
+import type { Cycle, SlLiftId, SlSlot, Units, Workout } from '../../core/types.ts';
 import { convertWeight } from '../../core/units.ts';
-import { computePrTimeline, type AmrapEffort } from '../../core/prs.ts';
-import { amrapSet } from '../shared/workoutSelect.ts';
+import { computePrTimelineWithResets, type DatedEffort } from '../../core/prs.ts';
+import { effortSet } from '../../core/efforts.ts';
+import { SL_SLOT_LIFTS, slSlotForSession } from '../../core/sl.ts';
 
 /** A resolved (completed or skipped) workout enriched for the history list. */
 export interface HistoryRow {
   workout: Workout;
-  /** True iff this workout's AMRAP effort set a personal record for its lift. */
+  /** True iff this workout's PR EFFORT set a personal record for its lift. */
   isPr: boolean;
 }
 
@@ -30,21 +31,30 @@ function completedKey(w: Workout): string {
 }
 
 /**
- * Compute, for every COMPLETED workout of a lift, whether its AMRAP effort was a
- * PR — evaluated across the whole (cross-cycle) history of that lift, in
+ * Compute, for every COMPLETED workout of a lift, whether its PR EFFORT was a
+ * record — evaluated across the whole (cross-cycle) history of that lift, in
  * completion order. Efforts are normalised into each workout's own units before
  * comparison so a unit switch mid-history doesn't corrupt the timeline.
  *
- * Returns a set of workout ids whose AMRAP set a new record. Skipped workouts
- * and workouts with no logged AMRAP never appear.
+ * The effort is program-aware (`effortSet`): the AMRAP set on a 5/3/1 workout,
+ * the best logged work set on a StrongLifts row. `resets` is Settings.prResets —
+ * an empty/absent list is behaviour-identical to the classic single timeline,
+ * and a non-empty one restarts the running max at each program switch while
+ * leaving pre-reset badges exactly as they were earned.
+ *
+ * Returns a set of workout ids whose effort set a new record. Skipped workouts
+ * and workouts with no logged effort never appear.
  */
-export function computePrWorkoutIds(workouts: readonly Workout[]): Set<string> {
+export function computePrWorkoutIds(
+  workouts: readonly Workout[],
+  resets: readonly string[] = [],
+): Set<string> {
   // Keyed by SlLiftId: the bucket key is `workout.liftId`, which now spans the
   // StrongLifts row as well. Grouping/PR math is unchanged.
   const byLift = new Map<SlLiftId, Workout[]>();
   for (const w of workouts) {
     if (w.status !== 'completed') continue;
-    const set = amrapSet(w);
+    const set = effortSet(w);
     if (!set || set.actualReps === undefined) continue;
     const list = byLift.get(w.liftId) ?? [];
     list.push(w);
@@ -56,12 +66,12 @@ export function computePrWorkoutIds(workouts: readonly Workout[]): Set<string> {
     list.sort((a, b) => completedKey(a).localeCompare(completedKey(b)));
     // Reference units = the FIRST effort's units; normalise the rest to match.
     const refUnits: Units = list[0]!.units;
-    const efforts: AmrapEffort[] = list.map((w) => {
-      const set = amrapSet(w)!;
+    const efforts: DatedEffort[] = list.map((w) => {
+      const set = effortSet(w)!;
       const weight = convertWeight(set.weight, w.units, refUnits);
-      return { weight, reps: set.actualReps!, ref: w.id };
+      return { weight, reps: set.actualReps!, ref: w.id, at: completedKey(w) };
     });
-    const timeline = computePrTimeline(efforts);
+    const timeline = computePrTimelineWithResets(efforts, resets);
     for (const entry of timeline) {
       if (entry.isPr && entry.ref !== undefined) prIds.add(entry.ref);
     }
@@ -82,8 +92,9 @@ export function computePrWorkoutIds(workouts: readonly Workout[]): Set<string> {
 export function groupHistoryByCycle(
   cycles: readonly Cycle[],
   workouts: readonly Workout[],
+  resets: readonly string[] = [],
 ): HistoryGroup[] {
-  const prIds = computePrWorkoutIds(workouts);
+  const prIds = computePrWorkoutIds(workouts, resets);
 
   const byCycle = new Map<string, Workout[]>();
   for (const w of workouts) {
@@ -106,4 +117,69 @@ export function groupHistoryByCycle(
     });
   }
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// StrongLifts session clustering
+// ---------------------------------------------------------------------------
+
+/** Whether a history group is a StrongLifts block (no TM summary, session rows). */
+export function isSlCycle(cycle: Cycle): boolean {
+  return cycle.program === 'sl5x5';
+}
+
+/** One StrongLifts session inside a history group: three lift sub-rows. */
+export interface SlHistoryCluster {
+  session: number;
+  slot: SlSlot;
+  /** Chronological key of the session (its earliest row) — the header date. */
+  dateKey: string;
+  /** The session's lift rows in PERFORMANCE order (squat first). */
+  rows: HistoryRow[];
+  /** True when every row was skipped — the cluster renders as SKIPPED. */
+  skipped: boolean;
+}
+
+/**
+ * Cluster a StrongLifts group's flat rows into SESSIONS, newest session first.
+ *
+ * The flat history list is per-workout, but a StrongLifts row on its own is
+ * meaningless — squat 185×5 says nothing without the session it belonged to. So
+ * rows are regrouped by `workout.session`, ordered within the cluster by the
+ * slot's performance order, and the cluster header carries the session tag and
+ * date. Rows with no `session` (i.e. not StrongLifts rows) are ignored.
+ */
+export function clusterSlRowsBySession(rows: readonly HistoryRow[]): SlHistoryCluster[] {
+  const bySession = new Map<number, HistoryRow[]>();
+  for (const row of rows) {
+    const session = row.workout.session;
+    if (session === undefined) continue;
+    const list = bySession.get(session) ?? [];
+    list.push(row);
+    bySession.set(session, list);
+  }
+
+  const clusters: SlHistoryCluster[] = [];
+  for (const [session, list] of bySession) {
+    const slot = slSlotForSession(session);
+    const order = SL_SLOT_LIFTS[slot];
+    const ordered = [...list].sort(
+      (a, b) =>
+        (order as readonly SlLiftId[]).indexOf(a.workout.liftId) -
+        (order as readonly SlLiftId[]).indexOf(b.workout.liftId),
+    );
+    const dateKey = ordered
+      .map((r) => completedKey(r.workout))
+      .reduce((a, b) => (a.localeCompare(b) <= 0 ? a : b));
+    clusters.push({
+      session,
+      slot,
+      dateKey,
+      rows: ordered,
+      skipped: ordered.every((r) => r.workout.status === 'skipped'),
+    });
+  }
+
+  clusters.sort((a, b) => b.session - a.session);
+  return clusters;
 }

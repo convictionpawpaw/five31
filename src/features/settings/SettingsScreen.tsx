@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { BackupFile, LiftId, Settings, Units } from '../../core/types.ts';
+import type { BackupFile, Cycle, LiftId, Settings, Units } from '../../core/types.ts';
 import { normalizeDayOrder } from '../../core/scheme.ts';
 import { roundingIncrementOptions } from '../../core/units.ts';
 import { db } from '../../db/db.ts';
@@ -12,9 +12,12 @@ import {
   BackupValidationError,
 } from '../../db/exportImport.ts';
 import {
+  clearPendingProgramSwitch,
+  getActiveCycle,
   getSettings,
   getTrainingMaxes,
   listCycles,
+  setPendingProgramSwitch,
   switchUnits,
   updateSettings,
 } from '../../db/repo/index.ts';
@@ -36,16 +39,25 @@ interface SettingsData {
   tms: Partial<Record<LiftId, number>>;
   cycleCount: number;
   workoutCount: number;
+  /** The running cycle — its `program` decides which switch is on offer. */
+  activeCycle: Cycle | null;
 }
 
 async function readSettings(): Promise<SettingsData> {
   const settings = (await getSettings()) ?? null;
-  const [tms, cycles, workoutCount] = await Promise.all([
+  const [tms, cycles, workoutCount, activeCycle] = await Promise.all([
     getTrainingMaxes(),
     listCycles(),
     db.workouts.count(),
+    getActiveCycle(),
   ]);
-  return { settings, tms, cycleCount: cycles.length, workoutCount };
+  return {
+    settings,
+    tms,
+    cycleCount: cycles.length,
+    workoutCount,
+    activeCycle: activeCycle ?? null,
+  };
 }
 
 export function SettingsScreen() {
@@ -75,8 +87,8 @@ export function SettingsScreen() {
         <h1 className="settings__title num">Settings</h1>
       </header>
 
-      <ProgramSection settings={settings} toast={toast} />
-      <TrainingMaxSection settings={settings} tms={data.tms} />
+      <ProgramSection settings={settings} toast={toast} activeCycle={data.activeCycle} />
+      <TrainingMaxSection settings={settings} tms={data.tms} activeCycle={data.activeCycle} />
       <DataSection toast={toast} />
       <DangerSection />
       <Footer settings={settings} cycleCount={data.cycleCount} workoutCount={data.workoutCount} />
@@ -88,7 +100,15 @@ type ToastApi = ReturnType<typeof useToast>;
 
 // --- PROGRAM ---------------------------------------------------------------
 
-function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastApi }) {
+function ProgramSection({
+  settings,
+  toast,
+  activeCycle,
+}: {
+  settings: Settings;
+  toast: ToastApi;
+  activeCycle: Cycle | null;
+}) {
   const [pendingUnits, setPendingUnits] = useState<Units | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -157,8 +177,68 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
     }
   };
 
+  const onSl = activeCycle?.program === 'sl5x5';
+  const armTarget: NonNullable<Settings['pendingProgramSwitch']> = onSl ? 'five31' : 'sl5x5';
+  const armed = settings.pendingProgramSwitch;
+  const armedCopy = onSl
+    ? 'Return to 5/3/1 at next cycle completion'
+    : 'Switch to StrongLifts 5×5 at next cycle completion';
+
+  const arm = async () => {
+    try {
+      await setPendingProgramSwitch(armTarget);
+      toast.show('Armed — applied when you complete this cycle', 'info');
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Update failed', 'danger');
+    }
+  };
+
+  const disarm = async () => {
+    try {
+      await clearPendingProgramSwitch();
+      toast.show('Program switch cancelled', 'info');
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Update failed', 'danger');
+    }
+  };
+
   return (
     <HudPanel title="Program" className="settings__section">
+      {/* The switch is ARMED here and APPLIED in the Complete-Cycle modal: a
+          program change mid-cycle would strand half-trained rows, so the cycle
+          boundary is the only safe seam. */}
+      <Row label="Current">
+        <span className="settings__tm">
+          <span className="num num-md text-amber">{onSl ? '5×5' : '5/3/1'}</span>
+          <span className="label text-low">{onSl ? 'StrongLifts' : "Wendler"}</span>
+        </span>
+      </Row>
+      {armed !== undefined ? (
+        <>
+          <div className="settings__row">
+            <span className="label settings__armed-chip">Armed</span>
+            <Button variant="ghost" onClick={() => void disarm()}>
+              Cancel
+            </Button>
+          </div>
+          <p className="label text-low settings__hint">
+            {armed === 'sl5x5'
+              ? 'Switch to StrongLifts 5×5 at next cycle completion.'
+              : 'Return to 5/3/1 at next cycle completion.'}
+          </p>
+        </>
+      ) : (
+        <>
+          <Button variant="ghost" block onClick={() => void arm()}>
+            {armedCopy}
+          </Button>
+          <p className="label text-low settings__hint">
+            Preselects the choice in the Complete-Cycle screen. Nothing changes until then, and you
+            can still pick the other option there.
+          </p>
+        </>
+      )}
+
       <Row label="Units">
         <Segmented
           options={[
@@ -240,6 +320,7 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
       </div>
       <p className="label text-low settings__hint">
         Order of training days within each week. Applies immediately — including the current cycle.
+        Applies to 5/3/1 cycles — 5×5 ordering is fixed A/B.
       </p>
 
       <Row label="Deload default">
@@ -273,13 +354,19 @@ function ProgramSection({ settings, toast }: { settings: Settings; toast: ToastA
 function TrainingMaxSection({
   settings,
   tms,
+  activeCycle,
 }: {
   settings: Settings;
   tms: Partial<Record<LiftId, number>>;
+  activeCycle: Cycle | null;
 }) {
   const [overrideLift, setOverrideLift] = useState<LiftId | null>(null);
   const tmStep = settings.units === 'kg' ? 1.25 : 2.5;
   const order = normalizeDayOrder(settings.dayOrder);
+  // During a block the TMs are DORMANT: the rows are driven by sl.lifts and
+  // tmOverrideRepo throws on an SL cycle. Disable rather than let the user
+  // discover that by hitting the error.
+  const slActive = activeCycle?.program === 'sl5x5';
 
   return (
     <HudPanel title="Training Maxes" className="settings__section">
@@ -291,13 +378,19 @@ function TrainingMaxSection({
             </span>
             <span className="label text-low">{settings.units.toUpperCase()}</span>
           </span>
-          <Button variant="ghost" onClick={() => setOverrideLift(liftId)} disabled={tms[liftId] === undefined}>
+          <Button
+            variant="ghost"
+            onClick={() => setOverrideLift(liftId)}
+            disabled={slActive || tms[liftId] === undefined}
+          >
             Edit
           </Button>
         </Row>
       ))}
       <p className="label text-low settings__hint">
-        Editing a TM regenerates only that lift&apos;s pending workouts.
+        {slActive
+          ? 'TMs resume when you return to 5/3/1.'
+          : "Editing a TM regenerates only that lift's pending workouts."}
       </p>
 
       {overrideLift && tms[overrideLift] !== undefined && (

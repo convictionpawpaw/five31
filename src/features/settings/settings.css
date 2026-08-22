@@ -235,3 +235,12 @@
   display: flex;
   gap: var(--space-2);
 }
+
+/* --- Armed program switch ------------------------------------------------ */
+.settings__armed-chip {
+  padding: 4px var(--space-2);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  color: var(--amber);
+  background: var(--amber-dim);
+}

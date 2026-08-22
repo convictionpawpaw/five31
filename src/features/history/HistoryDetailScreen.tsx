@@ -5,7 +5,7 @@ import type { MainSet, Workout } from '../../core/types.ts';
 import { db } from '../../db/db.ts';
 import { editPastWorkout, type PastWorkoutEdits } from '../../db/repo/index.ts';
 import { Button, HudPanel, NumberStepper, useToast } from '../../components/index.ts';
-import { cycleTag, LIFT_NAMES, weekLabel } from '../shared/liftLabels.ts';
+import { cycleTag, LIFT_NAMES, sessionLabel, slWeekLabel, weekLabel } from '../shared/liftLabels.ts';
 import { fmtTargetReps, fmtWeight } from '../shared/format.ts';
 import './historyDetail.css';
 
@@ -59,14 +59,21 @@ export function HistoryDetailScreen() {
 }
 
 function DetailHeader({ workout }: { workout: Workout }) {
+  // A StrongLifts row has no training max: `tmUsed` holds the session's WORKING
+  // weight, so it is labelled as such. Its week is an ordinary fourth week too,
+  // never a deload — hence slWeekLabel rather than weekLabel.
+  const isSl = workout.program === 'sl5x5' && workout.session !== undefined && workout.slSlot !== undefined;
   return (
     <header className="hdetail__head">
       <h1 className="hdetail__lift num">{LIFT_NAMES[workout.liftId]}</h1>
       <p className="label hdetail__meta">
-        Cycle {cycleTag(workout.cycleNumber)} · {weekLabel(workout.week)}
+        Cycle {cycleTag(workout.cycleNumber)} ·{' '}
+        {isSl
+          ? `${sessionLabel(workout.session!, workout.slSlot!)} · ${slWeekLabel(workout.week)}`
+          : weekLabel(workout.week)}
       </p>
       <p className="label text-mid">
-        TM {fmtWeight(workout.tmUsed)} {workout.units.toUpperCase()}
+        {isSl ? 'WORK' : 'TM'} {fmtWeight(workout.tmUsed)} {workout.units.toUpperCase()}
       </p>
     </header>
   );

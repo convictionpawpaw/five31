@@ -9,8 +9,8 @@ import type {
 } from '../../core/types.ts';
 import { epley } from '../../core/e1rm.ts';
 import { convertWeight } from '../../core/units.ts';
-import { computePrTimeline, type AmrapEffort } from '../../core/prs.ts';
-import { amrapSet } from '../shared/workoutSelect.ts';
+import { computePrTimelineWithResets, type DatedEffort } from '../../core/prs.ts';
+import { effortSet } from '../../core/efforts.ts';
 import { fmtShortDate } from '../shared/format.ts';
 import type { LinePoint } from './charts/index.ts';
 
@@ -19,12 +19,17 @@ function completedKey(w: Workout): string {
   return w.completedAt ?? w.id;
 }
 
-/** Completed workouts of one lift with a logged AMRAP, oldest first. */
-function completedAmrapWorkouts(workouts: readonly Workout[], liftId: LiftId): Workout[] {
+/**
+ * Completed workouts of one lift with a logged PR EFFORT, oldest first. The
+ * effort is program-aware (`effortSet`), so a 5/3/1 workout contributes its
+ * AMRAP set — byte-identical to the previous behaviour — and a StrongLifts row
+ * contributes its best logged work set.
+ */
+function completedEffortWorkouts(workouts: readonly Workout[], liftId: SlLiftId): Workout[] {
   return workouts
     .filter((w) => {
       if (w.liftId !== liftId || w.status !== 'completed') return false;
-      const set = amrapSet(w);
+      const set = effortSet(w);
       return set !== null && set.actualReps !== undefined;
     })
     .sort((a, b) => completedKey(a).localeCompare(completedKey(b)));
@@ -44,24 +49,27 @@ export interface E1rmSeries {
 }
 
 /**
- * Build the e1RM timeline for a lift from every completed workout's logged AMRAP
- * set, chronological. Efforts are converted into `targetUnits`. PR points (via
- * core computePrTimeline) are flagged for glowing diamond markers. `latest` is
+ * Build the e1RM timeline for a lift from every completed workout's logged PR
+ * effort, chronological. Efforts are converted into `targetUnits`. PR points
+ * (via core computePrTimelineWithResets) are flagged for glowing diamond
+ * markers; `resets` is Settings.prResets, so after a program switch with Keep
+ * PRs off the diamonds restart while the earlier line is untouched. `latest` is
  * the most recent effort's e1RM; `best` is the max e1RM over the series.
  */
 export function buildE1rmSeries(
   workouts: readonly Workout[],
-  liftId: LiftId,
+  liftId: SlLiftId,
   targetUnits: Units,
+  resets: readonly string[] = [],
 ): E1rmSeries {
-  const relevant = completedAmrapWorkouts(workouts, liftId);
+  const relevant = completedEffortWorkouts(workouts, liftId);
 
-  const efforts: AmrapEffort[] = relevant.map((w) => {
-    const set = amrapSet(w)!;
+  const efforts: DatedEffort[] = relevant.map((w) => {
+    const set = effortSet(w)!;
     const weight = convertWeight(set.weight, w.units, targetUnits);
-    return { weight, reps: set.actualReps!, ref: w.id };
+    return { weight, reps: set.actualReps!, ref: w.id, at: completedKey(w) };
   });
-  const timeline = computePrTimeline(efforts);
+  const timeline = computePrTimelineWithResets(efforts, resets);
 
   const points: LinePoint[] = [];
   let best: number | null = null;
@@ -98,15 +106,19 @@ export interface PrListEntry {
 }
 
 /**
- * Every PR-flagged AMRAP effort across all lifts, newest first. Each lift's
- * timeline is computed in its OWN unit history (efforts normalised to the first
- * effort's units per lift), preserving the values as logged.
+ * Every PR-flagged effort across all lifts, newest first. Each lift's timeline
+ * is computed in its OWN unit history (efforts normalised to the first effort's
+ * units per lift), preserving the values as logged. `resets` splits the timeline
+ * into PR epochs; pre-reset records keep the badge they earned.
  */
-export function buildPrList(workouts: readonly Workout[]): PrListEntry[] {
+export function buildPrList(
+  workouts: readonly Workout[],
+  resets: readonly string[] = [],
+): PrListEntry[] {
   const byLift = new Map<SlLiftId, Workout[]>();
   for (const w of workouts) {
     if (w.status !== 'completed') continue;
-    const set = amrapSet(w);
+    const set = effortSet(w);
     if (!set || set.actualReps === undefined) continue;
     const list = byLift.get(w.liftId) ?? [];
     list.push(w);
@@ -117,15 +129,20 @@ export function buildPrList(workouts: readonly Workout[]): PrListEntry[] {
   for (const [liftId, list] of byLift) {
     list.sort((a, b) => completedKey(a).localeCompare(completedKey(b)));
     const refUnits = list[0]!.units;
-    const efforts: AmrapEffort[] = list.map((w) => {
-      const set = amrapSet(w)!;
-      return { weight: convertWeight(set.weight, w.units, refUnits), reps: set.actualReps!, ref: w.id };
+    const efforts: DatedEffort[] = list.map((w) => {
+      const set = effortSet(w)!;
+      return {
+        weight: convertWeight(set.weight, w.units, refUnits),
+        reps: set.actualReps!,
+        ref: w.id,
+        at: completedKey(w),
+      };
     });
-    const timeline = computePrTimeline(efforts);
+    const timeline = computePrTimelineWithResets(efforts, resets);
     timeline.forEach((entry, i) => {
       if (!entry.isPr || entry.e1rm === null) return;
       const w = list[i]!;
-      const set = amrapSet(w)!;
+      const set = effortSet(w)!;
       out.push({
         workoutId: w.id,
         liftId,
@@ -269,4 +286,44 @@ export function accessoryOptions(defs: readonly AccessoryDef[]): AccessoryOption
       if (a.archived !== b.archived) return a.archived ? 1 : -1;
       return a.name.localeCompare(b.name);
     });
+}
+
+// ---------------------------------------------------------------------------
+// StrongLifts-aware chart chrome
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the barbell row has any data at all. The row is a StrongLifts-only
+ * lift: on a pure 5/3/1 history its chip would open onto a permanently empty
+ * chart, so the chip appears ONLY once a row workout exists (pending counts —
+ * the block has been created and the lift is real from that moment).
+ */
+export function hasRowData(workouts: readonly Workout[]): boolean {
+  return workouts.some((w) => w.liftId === 'row');
+}
+
+/**
+ * The lift chips for the e1RM tab: the user's 5/3/1 day order, with ROW appended
+ * (never interleaved) when — and only when — row data exists. The TM tab is
+ * deliberately NOT built from this: training maxes are a 4-lift concept.
+ */
+export function e1rmLiftChips(
+  order: readonly LiftId[],
+  workouts: readonly Workout[],
+): SlLiftId[] {
+  const chips: SlLiftId[] = [...order];
+  if (hasRowData(workouts)) chips.push('row');
+  return chips;
+}
+
+/** The caption shown under a PR chart once the record slate has been reset. */
+export const PR_RESET_CAPTION = 'Record reset at program switch — diamonds restart.';
+
+/**
+ * The reset caption, or null when the timeline is unbroken. A predicate rather
+ * than an inline `length > 0` so the rule ("shown iff prResets is non-empty",
+ * including the absent case) is stated in one tested place.
+ */
+export function prResetCaption(resets: readonly string[] | undefined): string | null {
+  return resets !== undefined && resets.length > 0 ? PR_RESET_CAPTION : null;
 }

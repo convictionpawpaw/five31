@@ -3,13 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Cycle, LiftId, Settings, Workout } from '../../core/types.ts';
 import { normalizeDayOrder } from '../../core/scheme.ts';
+import { effortSet } from '../../core/efforts.ts';
 import { db } from '../../db/db.ts';
 import { getSettings, listCycles } from '../../db/repo/index.ts';
 import { EmptyState, PrBadge } from '../../components/index.ts';
-import { LIFT_NAMES, weekLabel } from '../shared/liftLabels.ts';
+import { LIFT_NAMES, sessionLabel, weekLabel } from '../shared/liftLabels.ts';
 import { fmtMonthYear, fmtShortDate, fmtWeight } from '../shared/format.ts';
-import { amrapSet } from '../shared/workoutSelect.ts';
-import { groupHistoryByCycle, type HistoryGroup, type HistoryRow } from './historyGrouping.ts';
+import {
+  clusterSlRowsBySession,
+  groupHistoryByCycle,
+  isSlCycle,
+  type HistoryGroup,
+  type HistoryRow,
+  type SlHistoryCluster,
+} from './historyGrouping.ts';
 import './history.css';
 
 interface HistoryData {
@@ -30,7 +37,7 @@ async function readHistory(): Promise<HistoryData> {
 export function HistoryScreen() {
   const data = useLiveQuery(() => readHistory(), []);
   const groups = useMemo(
-    () => (data ? groupHistoryByCycle(data.cycles, data.workouts) : []),
+    () => (data ? groupHistoryByCycle(data.cycles, data.workouts, data.settings?.prResets ?? []) : []),
     [data],
   );
   const order = useMemo(() => normalizeDayOrder(data?.settings?.dayOrder), [data?.settings?.dayOrder]);
@@ -77,6 +84,10 @@ function CycleGroup({
   const [open, setOpen] = useState(defaultOpen);
   const { cycle } = group;
   const cycleNo = String(cycle.number).padStart(2, '0');
+  const isSl = isSlCycle(cycle);
+  // A block's TMs are a DORMANT snapshot, not what was trained — showing them
+  // would be a lie about the session weights below, so the tag replaces them.
+  const clusters = isSl ? clusterSlRowsBySession(group.rows) : [];
 
   return (
     <section className="histgroup">
@@ -90,19 +101,26 @@ function CycleGroup({
           Cycle {cycleNo} · {fmtMonthYear(cycle.startedAt)}
         </span>
         <span className="label text-low histgroup__tms">
-          TMs {tmSummary(cycle.tms, order)} {cycle.units.toUpperCase()}
+          {isSl ? 'StrongLifts 5×5' : `TMs ${tmSummary(cycle.tms, order)} ${cycle.units.toUpperCase()}`}
         </span>
         <span className="label text-low histgroup__chev" aria-hidden="true">
           {open ? '−' : '+'}
         </span>
       </button>
-      {open && (
-        <ul className="histgroup__rows">
-          {group.rows.map((row) => (
-            <HistoryRowItem key={row.workout.id} row={row} />
-          ))}
-        </ul>
-      )}
+      {open &&
+        (isSl ? (
+          <div className="histgroup__sessions">
+            {clusters.map((cluster) => (
+              <SlSessionCluster key={cluster.session} cluster={cluster} />
+            ))}
+          </div>
+        ) : (
+          <ul className="histgroup__rows">
+            {group.rows.map((row) => (
+              <HistoryRowItem key={row.workout.id} row={row} />
+            ))}
+          </ul>
+        ))}
     </section>
   );
 }
@@ -111,7 +129,7 @@ function HistoryRowItem({ row }: { row: HistoryRow }) {
   const navigate = useNavigate();
   const { workout } = row;
   const skipped = workout.status === 'skipped';
-  const set = amrapSet(workout);
+  const set = effortSet(workout);
   const dateStr = fmtShortDate(workout.completedAt ?? workout.startedAt ?? workout.id);
 
   return (
@@ -143,5 +161,56 @@ function HistoryRowItem({ row }: { row: HistoryRow }) {
         </span>
       </button>
     </li>
+  );
+}
+
+/**
+ * One StrongLifts session: a header line (`S05 · A · JUL 12`) with the three
+ * lift sub-rows beneath it. Flat per-lift rows would be unreadable here — a
+ * squat row means nothing without the session it was trained in.
+ */
+function SlSessionCluster({ cluster }: { cluster: SlHistoryCluster }) {
+  const navigate = useNavigate();
+  return (
+    <div className={`histsession${cluster.skipped ? ' histsession--skipped' : ''}`}>
+      <div className="histsession__head label text-low">
+        {sessionLabel(cluster.session, cluster.slot)} · {fmtShortDate(cluster.dateKey)}
+        {cluster.skipped && <span className="histsession__skip label"> SKIPPED</span>}
+      </div>
+      <ul className="histsession__rows">
+        {cluster.rows.map((row) => {
+          const set = effortSet(row.workout);
+          const work = row.workout.mainSets.filter((s) => s.kind === 'work');
+          return (
+            <li key={row.workout.id}>
+              <button
+                type="button"
+                className="histsubrow"
+                onClick={() => navigate(`/history/${row.workout.id}`)}
+              >
+                <span className="label label-hi histsubrow__lift">
+                  {LIFT_NAMES[row.workout.liftId]}
+                </span>
+                <span className="histsubrow__result">
+                  {cluster.skipped || work.length === 0 ? (
+                    <span className="label text-low">—</span>
+                  ) : (
+                    <span className="num histsubrow__sets">
+                      {fmtWeight(set?.weight ?? work[0]!.weight)}
+                      <span className="text-low"> × </span>
+                      {work.map((s) => s.actualReps ?? '—').join('/')}
+                    </span>
+                  )}
+                  {row.isPr && <PrBadge />}
+                  {row.workout.editedAt !== undefined && (
+                    <span className="label histrow__edited">edited</span>
+                  )}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

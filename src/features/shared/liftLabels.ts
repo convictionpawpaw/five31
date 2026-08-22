@@ -36,3 +36,21 @@ export function cycleTag(n: number): string {
 export function sessionLabel(n: number, slot: SlSlot): string {
   return `S${String(n).padStart(2, '0')} · ${slot}`;
 }
+
+/**
+ * A StrongLifts week label. Deliberately NOT {@link weekLabel}: sessions 10–12
+ * carry `week === 4`, which is an ordinary fourth week of the block and must
+ * never be rendered as 'DELOAD' (the week-4 footgun).
+ */
+export function slWeekLabel(week: number): string {
+  return `WEEK ${week}`;
+}
+
+/**
+ * The LONG form of {@link sessionLabel} for a screen header, e.g.
+ * (5, 'A', 2) → 'SESSION 05 · A · WEEK 2'. The compact tag is used where space
+ * is tight (history clusters); this one titles the session screen.
+ */
+export function slSessionHeading(n: number, slot: SlSlot, week: number): string {
+  return `SESSION ${String(n).padStart(2, '0')} · ${slot} · ${slWeekLabel(week)}`;
+}

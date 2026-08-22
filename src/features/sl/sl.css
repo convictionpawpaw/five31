@@ -1,0 +1,340 @@
+/* ---------------------------------------------------------------------------
+ * StrongLifts 5×5 — session screen, weight chips, session grid cells.
+ * Follows the workout screen's idiom (uppercase letterspaced labels, big
+ * Rajdhani numerals, amber = logged/primary, cyan = accent/section).
+ * ------------------------------------------------------------------------- */
+.slsession {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.slsession__loading {
+  color: var(--text-mid);
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+
+/* --- Header -------------------------------------------------------------- */
+.slsession__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-3);
+}
+.slsession__title {
+  font-size: var(--fs-lg);
+  letter-spacing: 0.06em;
+  color: var(--text-hi);
+}
+.slsession__meta {
+  color: var(--text-mid);
+}
+
+/* --- Notice strip (projected / resolved) --------------------------------- */
+.slsession__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.slsession__notice-copy {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  color: var(--text-mid);
+}
+
+/* --- Lift section -------------------------------------------------------- */
+.sllift {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.sllift--projected {
+  opacity: 0.75;
+  border-style: dashed;
+}
+.sllift__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.sllift__name {
+  color: var(--cyan);
+}
+.sllift__load {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.sllift__weight {
+  font-size: var(--fs-xl);
+  color: var(--amber);
+}
+.sllift__unit {
+  color: var(--text-mid);
+}
+.sllift__scheme {
+  color: var(--text-low);
+}
+
+/* The 'PROJECTED' tag — never let a forecast read as a prescription. */
+.sltag {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-low);
+  background: var(--bg-2);
+}
+
+/* --- Set chips ----------------------------------------------------------- */
+.sllift__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.slchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+.slchip.is-logged {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.slchip.is-short {
+  border-color: var(--danger);
+}
+.slchip.is-editing {
+  border-color: var(--cyan);
+}
+.slchip:disabled {
+  opacity: 0.6;
+}
+.slchip__reps {
+  font-size: var(--fs-lg);
+  color: var(--text-hi);
+}
+.slchip.is-logged .slchip__reps {
+  color: var(--amber);
+}
+.slchip.is-short .slchip__reps {
+  color: var(--danger);
+}
+.sllift__editor {
+  padding-top: var(--space-1);
+}
+
+/* --- Per-lift verdict ---------------------------------------------------- */
+.sllift__verdict {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.sllift__verdict--pass {
+  color: var(--cyan);
+}
+.sllift__verdict--miss {
+  color: var(--text-mid);
+}
+.sllift__verdict--deload {
+  color: var(--danger);
+}
+
+/* --- Read-only summary --------------------------------------------------- */
+.slsession__ro-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.slsession__ro-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.slsession__ro-note {
+  text-align: center;
+}
+
+/* --- Notes --------------------------------------------------------------- */
+.slsession__notes {
+  width: 100%;
+  min-height: 80px;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text-hi);
+  resize: vertical;
+}
+.slsession__notes:focus {
+  outline: none;
+  border-color: var(--cyan);
+}
+.slsession__notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.slsession__notes-head .label {
+  color: var(--text-mid);
+}
+
+/* --- Sticky finish bar (mirrors .workout__finishbar) --------------------- */
+.slsession__finishbar-spacer {
+  height: calc(var(--tap) + var(--space-3) * 2 + 56px + env(safe-area-inset-bottom));
+}
+.slsession__finishbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom));
+  z-index: 110;
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+}
+
+/* --- Modals -------------------------------------------------------------- */
+.slsession__modal-copy {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  margin-bottom: var(--space-3);
+}
+.slsession__modal-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.sloutcomes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.sloutcome {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+/* --- Weight chip strip (cycle screen) ------------------------------------ */
+.slstrip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-1);
+}
+.slcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 76px;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.slcell__lift {
+  color: var(--cyan);
+}
+.slcell__w {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+.slcell__pips {
+  display: inline-flex;
+  gap: 3px;
+}
+.slpip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--text-low);
+  box-sizing: border-box;
+}
+.slpip.is-on {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+/* --- Session grid cell (cycle screen) ------------------------------------ */
+.cycle__slgrid-row {
+  display: grid;
+  grid-template-columns: 24px repeat(3, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+.slgridcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.slgridcell--completed {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+.slgridcell--in_progress {
+  border-color: var(--cyan);
+}
+.slgridcell--skipped {
+  opacity: 0.55;
+}
+.slgridcell--mixed {
+  border-style: dashed;
+}
+.slgridcell__tag {
+  color: var(--text-mid);
+}
+.slgridcell__w {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+.slgridcell--completed .slgridcell__w {
+  color: var(--amber);
+}
+.slgridcell__w.is-projected {
+  color: var(--text-low);
+}

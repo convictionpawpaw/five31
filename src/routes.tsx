@@ -4,6 +4,7 @@ import { SettingsGate } from './SettingsGate.tsx';
 import { OnboardingWizard } from './features/onboarding/OnboardingWizard.tsx';
 import { TodayScreen } from './features/today/TodayScreen.tsx';
 import { WorkoutScreen } from './features/workout/WorkoutScreen.tsx';
+import { SlSessionScreen } from './features/sl/SlSessionScreen.tsx';
 import { CycleScreen } from './features/cycle/CycleScreen.tsx';
 import { ProgressScreen } from './features/progress/ProgressScreen.tsx';
 import { HistoryScreen } from './features/history/HistoryScreen.tsx';
@@ -31,6 +32,9 @@ export const router = createHashRouter([
         children: [
           { index: true, element: <TodayScreen /> },
           { path: 'workout/:id', element: <WorkoutScreen /> },
+          // A StrongLifts session is trained as a unit, so it gets its own route;
+          // /workout/:id for an SL row redirects here (see WorkoutScreen).
+          { path: 'sl-session/:cycleId/:n', element: <SlSessionScreen /> },
           { path: 'cycle', element: <CycleScreen /> },
           { path: 'progress', element: <ProgressScreen /> },
           { path: 'history', element: <HistoryScreen /> },

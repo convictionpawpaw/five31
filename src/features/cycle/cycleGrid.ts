@@ -1,6 +1,25 @@
-import type { LiftId, WeekNumber, Workout, WorkoutStatus } from '../../core/types.ts';
+import type {
+  LiftId,
+  SlCycleState,
+  SlSlot,
+  WeekNumber,
+  Workout,
+  WorkoutStatus,
+} from '../../core/types.ts';
 import { normalizeDayOrder } from '../../core/scheme.ts';
+import {
+  SL_SESSIONS_PER_CYCLE,
+  SL_SESSIONS_PER_WEEK,
+  slSlotForSession,
+  slWeekForSession,
+} from '../../core/sl.ts';
 import { topWorkSet } from '../shared/workoutSelect.ts';
+import {
+  buildSlSessionView,
+  slSessionRows,
+  type SlSessionStatus,
+  type SlWeightBasis,
+} from '../sl/slView.ts';
 
 /** One cell of the week×lift grid. */
 export interface GridCell {
@@ -58,4 +77,81 @@ export function deloadRemovable(workouts: readonly Workout[]): boolean {
 /** Whether every workout is resolved (completed/skipped) — complete-cycle gate. */
 export function allResolved(workouts: readonly Workout[]): boolean {
   return workouts.length > 0 && workouts.every((w) => w.status === 'completed' || w.status === 'skipped');
+}
+
+// ---------------------------------------------------------------------------
+// StrongLifts grid
+// ---------------------------------------------------------------------------
+
+/** One cell of the StrongLifts grid: a whole SESSION, not a single lift. */
+export interface SlGridCell {
+  session: number;
+  slot: SlSlot;
+  /** The session's rows in performance order; empty on a malformed block. */
+  workouts: Workout[];
+  /** Aggregate status of the three rows — drives the cell glyph. */
+  status: SlSessionStatus;
+  /** The squat load (squat leads every session), stamped or projected. */
+  squatWeight: number | null;
+  /** Whether `squatWeight` is a forecast — the cell must say so. */
+  basis: SlWeightBasis;
+}
+
+/** One row of the StrongLifts grid: a week and its three session cells. */
+export interface SlGridRow {
+  week: WeekNumber;
+  cells: SlGridCell[];
+}
+
+/**
+ * Arrange a StrongLifts block into 4 week-rows × 3 session-cells.
+ *
+ * Unlike {@link buildGrid} the axes are week × SESSION, not week × lift: a
+ * StrongLifts session is trained (and skipped, and finished) as a unit, so the
+ * cell is the unit of navigation. Each cell carries the SQUAT load, because
+ * squat leads both slots and is therefore the one lift present in all twelve
+ * cells. Unstamped sessions show a projection (`basis: 'projected'`).
+ *
+ * The grid is always the full 12 cells so the block's shape is legible from the
+ * first session; a session with no rows still renders (status 'pending').
+ */
+export function buildSlGrid(
+  workouts: readonly Workout[],
+  sl?: SlCycleState,
+): SlGridRow[] {
+  const rows: SlGridRow[] = [];
+  for (let session = 1; session <= SL_SESSIONS_PER_CYCLE; session++) {
+    const week = slWeekForSession(session);
+    const view = buildSlSessionView(workouts, session, sl);
+    const squat = view.lifts.find((l) => l.liftId === 'squat') ?? null;
+
+    const cell: SlGridCell = {
+      session,
+      slot: slSlotForSession(session),
+      workouts: view.lifts.map((l) => l.workout),
+      status: view.status,
+      squatWeight: squat ? squat.weight : null,
+      basis: squat ? squat.basis : 'projected',
+    };
+
+    const rowIndex = (session - 1) / SL_SESSIONS_PER_WEEK;
+    const existing = rows[Math.floor(rowIndex)];
+    if (existing) existing.cells.push(cell);
+    else rows.push({ week, cells: [cell] });
+  }
+  return rows;
+}
+
+/**
+ * Whether every one of the block's 36 rows is resolved — the SL complete-cycle
+ * gate. Distinct from {@link allResolved} only in that it also insists every
+ * session actually HAS rows, so a truncated import cannot unlock completion.
+ */
+export function slAllResolved(workouts: readonly Workout[]): boolean {
+  for (let session = 1; session <= SL_SESSIONS_PER_CYCLE; session++) {
+    const rows = slSessionRows(workouts, session);
+    if (rows.length === 0) return false;
+    if (!rows.every((w) => w.status === 'completed' || w.status === 'skipped')) return false;
+  }
+  return true;
 }

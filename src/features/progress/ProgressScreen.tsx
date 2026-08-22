@@ -6,6 +6,7 @@ import type {
   BodyweightEntry,
   Cycle,
   LiftId,
+  SlLiftId,
   Settings,
   TmEvent,
   Workout,
@@ -29,6 +30,8 @@ import {
   buildE1rmSeries,
   buildPrList,
   buildTmStepSeries,
+  e1rmLiftChips,
+  prResetCaption,
   type StatValue,
 } from './progressData.ts';
 import './progress.css';
@@ -107,7 +110,14 @@ export function ProgressScreen() {
         ))}
       </div>
 
-      {tab === 'e1rm' && <E1rmTab workouts={data.workouts} units={settings.units} order={order} />}
+      {tab === 'e1rm' && (
+        <E1rmTab
+          workouts={data.workouts}
+          units={settings.units}
+          order={order}
+          resets={settings.prResets ?? []}
+        />
+      )}
       {tab === 'tm' && (
         <TmTab cycles={data.cycles} tmEvents={data.tmEvents} units={settings.units} order={order} />
       )}
@@ -121,7 +131,7 @@ export function ProgressScreen() {
       {tab === 'bodyweight' && (
         <BodyweightTab entries={data.bodyweight} units={settings.units} />
       )}
-      {tab === 'prs' && <PrsTab workouts={data.workouts} />}
+      {tab === 'prs' && <PrsTab workouts={data.workouts} resets={settings.prResets ?? []} />}
     </div>
   );
 }
@@ -143,14 +153,19 @@ function Stat({ label, stat }: { label: string; stat: StatValue | null }) {
   );
 }
 
-function LiftChips({
+/**
+ * Lift chips, generic over {@link SlLiftId} so the e1RM tab can append ROW while
+ * the TM tab stays strictly 4-lift (training maxes are a 5/3/1 concept and the
+ * row has none).
+ */
+function LiftChips<T extends SlLiftId>({
   value,
   onChange,
   order,
 }: {
-  value: LiftId;
-  onChange: (l: LiftId) => void;
-  order: readonly LiftId[];
+  value: T;
+  onChange: (l: T) => void;
+  order: readonly T[];
 }) {
   return (
     <div className="progress__chips" role="tablist" aria-label="Lift">
@@ -176,28 +191,43 @@ function E1rmTab({
   workouts,
   units,
   order,
+  resets,
 }: {
   workouts: Workout[];
   units: Settings['units'];
   order: readonly LiftId[];
+  resets: readonly string[];
 }) {
-  const [lift, setLift] = useState<LiftId>(order[0]!);
-  const series = useMemo(() => buildE1rmSeries(workouts, lift, units), [workouts, lift, units]);
+  // ROW is appended only once row data exists, so a pure 5/3/1 history never
+  // shows a chip that opens onto a permanently empty chart.
+  const chips = useMemo(() => e1rmLiftChips(order, workouts), [order, workouts]);
+  const [lift, setLift] = useState<SlLiftId>(chips[0]!);
+  // A block that ended can retire the ROW chip out from under the selection.
+  const active = chips.includes(lift) ? lift : chips[0]!;
+  const series = useMemo(
+    () => buildE1rmSeries(workouts, active, units, resets),
+    [workouts, active, units, resets],
+  );
+  const resetCaption = prResetCaption(resets);
 
   return (
     <>
-      <LiftChips value={lift} onChange={setLift} order={order} />
-      <HudPanel title={`${LIFT_NAMES[lift]} · Estimated 1RM`}>
+      <LiftChips value={active} onChange={setLift} order={chips} />
+      <HudPanel title={`${LIFT_NAMES[active]} · Estimated 1RM`}>
         {series.points.length === 0 ? (
-          <EmptyState title="No AMRAP data" message="Complete an AMRAP set to chart e1RM." />
+          <EmptyState
+            title="No effort data"
+            message="Complete an AMRAP set — or a 5×5 session — to chart e1RM."
+          />
         ) : (
           <>
             <div className="progress__stats">
               <Stat label="Latest" stat={series.latest} />
               <Stat label="Best" stat={series.best} />
             </div>
-            <LineChart points={series.points} ariaLabel={`${LIFT_NAMES[lift]} estimated 1RM over time`} />
+            <LineChart points={series.points} ariaLabel={`${LIFT_NAMES[active]} estimated 1RM over time`} />
             <p className="label text-low progress__caption">Amber diamonds mark personal records.</p>
+            {resetCaption && <p className="label text-low progress__caption">{resetCaption}</p>}
           </>
         )}
       </HudPanel>
@@ -218,6 +248,7 @@ function TmTab({
   units: Settings['units'];
   order: readonly LiftId[];
 }) {
+  // Deliberately 4-lift: the barbell row has no training max.
   const [lift, setLift] = useState<LiftId>(order[0]!);
   const series = useMemo(() => buildTmStepSeries(cycles, lift, units), [cycles, lift, units]);
   const events = useMemo(
@@ -360,8 +391,9 @@ function BodyweightTab({
 
 // --- PRs tab ---------------------------------------------------------------
 
-function PrsTab({ workouts }: { workouts: Workout[] }) {
-  const prs = useMemo(() => buildPrList(workouts), [workouts]);
+function PrsTab({ workouts, resets }: { workouts: Workout[]; resets: readonly string[] }) {
+  const prs = useMemo(() => buildPrList(workouts, resets), [workouts, resets]);
+  const resetCaption = prResetCaption(resets);
   return (
     <HudPanel title="Personal Records">
       {prs.length === 0 ? (
@@ -387,6 +419,7 @@ function PrsTab({ workouts }: { workouts: Workout[] }) {
           ))}
         </ul>
       )}
+      {resetCaption && <p className="label text-low progress__caption">{resetCaption}</p>}
     </HudPanel>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { AccessoryWork, MainSet, Settings, Workout } from '../../core/types.ts';
 import { epley } from '../../core/e1rm.ts';
@@ -95,6 +95,14 @@ export function WorkoutScreen() {
     );
   }
 
+  // REDIRECT: a StrongLifts row is never logged on its own — its session is the
+  // unit of work. Any /workout/:id that lands on an SL row (a stale link, a
+  // bookmark, a grid cell built before the program switch) hands off to the
+  // session screen. `replace` so Back doesn't bounce the user straight back here.
+  if (workout.program === 'sl5x5' && workout.session !== undefined) {
+    return <Navigate to={`/sl-session/${workout.cycleId}/${workout.session}`} replace />;
+  }
+
   const readOnly = workout.status === 'completed' || workout.status === 'skipped';
 
   return (
@@ -113,6 +121,7 @@ export function WorkoutScreen() {
         <ActiveBody
           workout={workout}
           liftWorkouts={data.liftWorkouts}
+          prResets={data.settings.prResets ?? []}
           accessoryPreview={data.accessoryPreview}
           onFinished={(msg) => {
             navigate('/');
@@ -149,12 +158,15 @@ function WorkoutHeader({ workout }: { workout: Workout }) {
 function ActiveBody({
   workout,
   liftWorkouts,
+  prResets,
   accessoryPreview,
   onFinished,
   onSkipped,
 }: {
   workout: Workout;
   liftWorkouts: Workout[];
+  /** Settings.prResets — the live PR hint must respect record epochs too. */
+  prResets: readonly string[];
   accessoryPreview: AccessoryWork[];
   onFinished: (msg: string) => void;
   onSkipped: () => void;
@@ -237,7 +249,14 @@ function ActiveBody({
         {nonAmrapWork.map((s) => (
           <WorkSetRow key={`work-${s.index}`} workout={workout} set={s} />
         ))}
-        {amrap && <AmrapRow workout={workout} set={amrap} liftWorkouts={liftWorkouts} />}
+        {amrap && (
+          <AmrapRow
+            workout={workout}
+            set={amrap}
+            liftWorkouts={liftWorkouts}
+            prResets={prResets}
+          />
+        )}
       </section>
 
       {accessories.length > 0 && (
@@ -420,17 +439,19 @@ function AmrapRow({
   workout,
   set,
   liftWorkouts,
+  prResets,
 }: {
   workout: Workout;
   set: MainSet;
   liftWorkouts: Workout[];
+  prResets: readonly string[];
 }) {
   const [reps, setReps] = useState<number>(set.actualReps ?? set.targetReps);
   const logged = set.actualReps !== undefined;
 
   const bestE1rm = useMemo(
-    () => bestE1rmForLift(liftWorkouts, workout.liftId, workout.units, workout.id),
-    [liftWorkouts, workout.liftId, workout.units, workout.id],
+    () => bestE1rmForLift(liftWorkouts, workout.liftId, workout.units, workout.id, prResets),
+    [liftWorkouts, workout.liftId, workout.units, workout.id, prResets],
   );
 
   const e1 = epley(set.weight, reps);

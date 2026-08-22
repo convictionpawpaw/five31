@@ -317,3 +317,37 @@ export async function logSlSet(
 ): Promise<void> {
   await logMainSet(workoutId, 'work', index, actualReps);
 }
+
+/**
+ * Override the working weight one lift will use from its NEXT session onward,
+ * in ONE transaction over `cycles`.
+ *
+ * Scope is deliberately narrow — this is the cycle screen's weight chip, the
+ * StrongLifts analogue of a TM override:
+ *  - only `sl.lifts[liftId].weight` changes. The `increment` and, critically,
+ *    the `failStreak` are PRESERVED: a manual correction is not an assertion
+ *    that the misses never happened, and silently clearing the streak would
+ *    postpone a deload the lift has already earned.
+ *  - NO workout row is touched, which is why `workouts` is not in the
+ *    transaction scope. Already-stamped rows are frozen (history, or a session
+ *    in flight that must keep the weight it opened at) and every later session
+ *    is unstamped, so future sessions pick the new weight up on their next
+ *    start. "Future sessions only" is therefore structural, not a filter.
+ */
+export async function overrideSlLiftWeight(
+  cycleId: string,
+  liftId: SlLiftId,
+  weight: number,
+): Promise<void> {
+  if (!Number.isFinite(weight) || weight <= 0) {
+    throw new Error('A StrongLifts working weight must be greater than zero.');
+  }
+  await db.transaction('rw', db.cycles, async () => {
+    const { cycle, sl } = await requireActiveSlCycle(cycleId);
+    const current = runtimeFor(sl, liftId);
+    await db.cycles.put({
+      ...cycle,
+      sl: { ...sl, lifts: { ...sl.lifts, [liftId]: { ...current, weight } } },
+    });
+  });
+}
