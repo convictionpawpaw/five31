@@ -125,6 +125,57 @@ describe('completeCycleToSl (5/3/1 → StrongLifts)', () => {
     expect(Object.keys((await getSettings())!)).not.toContain('pendingProgramSwitch');
   });
 
+  it('REJECTS a non-positive opening weight before it opens a transaction', async () => {
+    // The four main-lift steppers clamp at min 0, so a press-and-hold on a minus
+    // button reaches zero and the confirm used to go straight through: session 1
+    // would stamp squat 5×0 and the block would progress 0 → 5 → 10, with tmUsed
+    // 0 rows entering history and the e1RM / PR series. Its sibling
+    // overrideSlLiftWeight has enforced this rule all along.
+    await initializeFromOnboarding(lbOnboardingPayload());
+    const classic = await getActiveCycle();
+
+    await expect(
+      completeCycleToSl({
+        weights: { ...SL_WEIGHTS, squat: 0 },
+        increments: defaultSlIncrements('lb'),
+        keepPrs: true,
+      }),
+    ).rejects.toThrow(/greater than zero/);
+
+    // Nothing was opened and nothing was closed.
+    const active = await getActiveCycle();
+    expect(active!.id).toBe(classic!.id);
+    expect(active!.program).toBeUndefined();
+    expect(await db.cycles.count()).toBe(1);
+    expect(await db.workouts.where('cycleId').equals(classic!.id).count()).toBe(12);
+  });
+
+  it('REJECTS a zero or non-finite increment, which would freeze progression forever', async () => {
+    await initializeFromOnboarding(lbOnboardingPayload());
+    await expect(
+      completeCycleToSl({
+        weights: SL_WEIGHTS,
+        increments: { ...defaultSlIncrements('lb'), deadlift: 0 },
+        keepPrs: true,
+      }),
+    ).rejects.toThrow(/greater than zero/);
+    await expect(
+      completeCycleToSl({
+        weights: SL_WEIGHTS,
+        increments: { ...defaultSlIncrements('lb'), row: Number.NaN },
+        keepPrs: true,
+      }),
+    ).rejects.toThrow(/greater than zero/);
+    await expect(
+      completeCycleToSl({
+        weights: { ...SL_WEIGHTS, row: Number.POSITIVE_INFINITY },
+        increments: defaultSlIncrements('lb'),
+        keepPrs: true,
+      }),
+    ).rejects.toThrow(/greater than zero/);
+    expect(await db.cycles.count()).toBe(1);
+  });
+
   it('is all-or-nothing: a mid-transaction failure leaves the 5/3/1 cycle active', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     const classic = await getActiveCycle();

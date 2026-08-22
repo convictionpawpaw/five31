@@ -1,5 +1,5 @@
 import { ulid } from 'ulid';
-import type { LiftId, SlCycleState, SlLiftRuntime, Units } from '../../core/types.ts';
+import type { LiftId, SlCycleState, SlLiftRuntime, Units, Workout } from '../../core/types.ts';
 import { DAY_ORDER } from '../../core/scheme.ts';
 import { applyTmOverridePlan, type CycleLiftInput } from '../../core/cycle.ts';
 import { convertWeight, defaultLiftIncrements, defaultRoundingIncrement } from '../../core/units.ts';
@@ -82,7 +82,21 @@ export async function switchUnits(to: Units): Promise<void> {
         // next start re-derives them from the converted `sl.lifts` above.
         // applyTmOverridePlan would also be plain wrong here: it rebuilds sets
         // from a TM percentage scheme StrongLifts does not use.
-        if (active.program !== 'sl5x5') {
+        //
+        // What the block DOES need is a corrected LABEL on the rows that carry
+        // no weight yet. `startSlSession` now stamps `units` from the cycle, so
+        // the mismatch cannot reach history either way; relabelling here as well
+        // means a never-stamped row is never even READ carrying a units field
+        // that disagrees with the weights its block is now denominated in.
+        if (active.program === 'sl5x5') {
+          const blockRows = await db.workouts.where('cycleId').equals(active.id).toArray();
+          const unstamped = blockRows.filter(
+            (w) => isNeverStampedSlRow(w) && w.units !== to,
+          );
+          if (unstamped.length > 0) {
+            await db.workouts.bulkPut(unstamped.map((w) => ({ ...w, units: to })));
+          }
+        } else {
           const cycleWorkouts = await db.workouts.where('cycleId').equals(active.id).toArray();
           // Regenerate pending workouts per lift with the converted TM. Set
           // weights round to the new unit's ROUNDING increment (not the per-lift
@@ -127,6 +141,17 @@ export async function switchUnits(to: Units): Promise<void> {
       });
     },
   );
+}
+
+/**
+ * A StrongLifts row that has NEVER been stamped, and therefore holds no frozen
+ * weight to protect: still pending, or skipped before it was ever started (which
+ * leaves `tmUsed` 0 and `mainSets` empty, exactly as `buildSlCycleWorkouts` and
+ * the un-skip rebuild produce). Anything else is history and stays frozen.
+ */
+function isNeverStampedSlRow(w: Workout): boolean {
+  if (w.status === 'pending') return true;
+  return w.status === 'skipped' && w.tmUsed === 0 && w.mainSets.length === 0;
 }
 
 /**

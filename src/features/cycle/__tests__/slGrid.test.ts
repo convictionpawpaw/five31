@@ -22,6 +22,7 @@ describe('buildSlGrid — shape', () => {
     const grid = buildSlGrid([], undefined);
     expect(grid.flatMap((r) => r.cells)).toHaveLength(12);
     expect(grid[0]!.cells[0]!.squatWeight).toBeNull();
+    expect(grid[0]!.cells[0]!.basis).toBe('none');
   });
 });
 
@@ -65,6 +66,32 @@ describe('buildSlGrid — squat weight, stamped else projected', () => {
     // runtime weight — 'current', never labelled as a forecast.
     expect(cells[1]!.squatWeight).toBe(260);
     expect(cells[1]!.basis).toBe('current');
+  });
+
+  it('shows NO weight in a cell skipped before it was ever started', () => {
+    // The bug this pins: the cell borrowed the block's LIVE squat weight for a
+    // resolved-but-unstamped session and rendered it undimmed (basis 'current'),
+    // so a settled historical cell silently re-wrote itself every time a later
+    // session progressed the squat. The cell renders '—' on a null weight.
+    let block = playInBlock(slBlock(), 1, { status: 'skipped' });
+    block = playInBlock(block, 2); // move the runtime on behind it
+    const early = buildSlGrid(block, slState({ squat: 275 }))[0]!.cells[0]!;
+    expect(early.squatWeight).toBeNull();
+    expect(early.basis).toBe('none');
+
+    // ...and it stays null as the block keeps progressing — no retroactive drift.
+    const later = buildSlGrid(block, slState({ squat: 310 }))[0]!.cells[0]!;
+    expect(later.squatWeight).toBeNull();
+  });
+
+  it('keeps the frozen weight when a session was STARTED and then skipped', () => {
+    const started = playInBlock(slBlock(), 1, { status: 'in_progress', weights: { squat: 245 } });
+    const block = started.map((w) =>
+      w.session === 1 ? { ...w, status: 'skipped' as const } : w,
+    );
+    const cell = buildSlGrid(block, slState({ squat: 310 }))[0]!.cells[0]!;
+    expect(cell.squatWeight).toBe(245);
+    expect(cell.basis).toBe('stamped');
   });
 
   it('gives every cell its three rows for navigation', () => {

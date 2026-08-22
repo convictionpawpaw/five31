@@ -91,9 +91,15 @@ export interface SlGridCell {
   workouts: Workout[];
   /** Aggregate status of the three rows — drives the cell glyph. */
   status: SlSessionStatus;
-  /** The squat load (squat leads every session), stamped or projected. */
+  /**
+   * The squat load (squat leads every session), stamped or projected — and NULL
+   * when the session was skipped before it was ever started (basis 'none') or
+   * has no rows at all. A resolved cell must never borrow the block's live
+   * weight: the cell would then silently re-write itself every time a later
+   * session moved the runtime.
+   */
   squatWeight: number | null;
-  /** Whether `squatWeight` is a forecast — the cell must say so. */
+  /** Where `squatWeight` came from — the cell must say when it is a forecast. */
   basis: SlWeightBasis;
 }
 
@@ -131,7 +137,7 @@ export function buildSlGrid(
       workouts: view.lifts.map((l) => l.workout),
       status: view.status,
       squatWeight: squat ? squat.weight : null,
-      basis: squat ? squat.basis : 'projected',
+      basis: squat ? squat.basis : 'none',
     };
 
     const rowIndex = (session - 1) / SL_SESSIONS_PER_WEEK;

@@ -261,6 +261,7 @@ export function CycleScreen() {
           runtime={sl.lifts[overrideSlLift]}
           units={settings.units}
           step={weightStep}
+          workouts={workouts}
           onClose={() => setOverrideSlLift(null)}
         />
       )}

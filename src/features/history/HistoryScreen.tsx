@@ -174,7 +174,10 @@ function SlSessionCluster({ cluster }: { cluster: SlHistoryCluster }) {
   return (
     <div className={`histsession${cluster.skipped ? ' histsession--skipped' : ''}`}>
       <div className="histsession__head label text-low">
-        {sessionLabel(cluster.session, cluster.slot)} · {fmtShortDate(cluster.dateKey)}
+        {/* A session skipped before it was ever started carries no timestamp,
+            and the block-creation ULID is not one — the label stands alone. */}
+        {sessionLabel(cluster.session, cluster.slot)}
+        {cluster.dateKey !== null && ` · ${fmtShortDate(cluster.dateKey)}`}
         {cluster.skipped && <span className="histsession__skip label"> SKIPPED</span>}
       </div>
       <ul className="histsession__rows">

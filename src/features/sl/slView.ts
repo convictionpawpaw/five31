@@ -11,6 +11,7 @@ import type {
 } from '../../core/types.ts';
 import {
   SL_FAILS_BEFORE_DELOAD,
+  SL_LIFTS,
   SL_SESSIONS_PER_CYCLE,
   SL_SLOT_LIFTS,
   buildSlMainSets,
@@ -24,6 +25,7 @@ import {
 import { effortSet } from '../../core/efforts.ts';
 import { epley } from '../../core/e1rm.ts';
 import { convertWeight } from '../../core/units.ts';
+import { roundToIncrement } from '../../core/rounding.ts';
 import { fmtWeight } from '../shared/format.ts';
 
 /**
@@ -107,15 +109,18 @@ export function slOccurrencesBefore(
  *                that is NOT a forecast.
  *  - 'projected' a forecast: it assumes every unresolved session before this
  *                one is passed. Must always be labelled as such in the UI.
+ *  - 'none'      there IS no weight: the row is resolved (skipped) but was
+ *                never stamped, so it has no history to show and no future to
+ *                forecast. `weight` is null and the UI renders a placeholder.
  */
-export type SlWeightBasis = 'stamped' | 'current' | 'projected';
+export type SlWeightBasis = 'stamped' | 'current' | 'projected' | 'none';
 
 /** One lift within a session, ready to render. */
 export interface SlLiftView {
   liftId: SlLiftId;
   workout: Workout;
-  /** The weight to show. */
-  weight: number;
+  /** The weight to show, or null when `basis` is 'none' — never a stand-in. */
+  weight: number | null;
   basis: SlWeightBasis;
   /** The work sets to render — the row's own when stamped, else a preview. */
   sets: MainSet[];
@@ -167,6 +172,21 @@ export function buildSlSessionView(
         sets,
         loggedCount,
         allLogged: sets.length > 0 && loggedCount === sets.length,
+      };
+    }
+    // RESOLVED BUT NEVER STAMPED — a session skipped before it was started.
+    // It has no frozen weight, and the live/projected one would be a lie that
+    // silently REWRITES itself every time a later session moves the runtime:
+    // a settled piece of history tracking today's working weight. Show nothing.
+    if (isSlRowResolved(workout)) {
+      return {
+        liftId: workout.liftId,
+        workout,
+        weight: null,
+        basis: 'none',
+        sets: [],
+        loggedCount: 0,
+        allLogged: false,
       };
     }
     const runtime = sl?.lifts[workout.liftId];
@@ -345,18 +365,86 @@ export function bestSlEffortsByLift(
   return out;
 }
 
+/** A carried row weight, in the units of the block it came FROM. */
+export interface CarriedSlRowWeight {
+  weight: number;
+  /** The units that weight is denominated in — the source block's own. */
+  units: Units;
+}
+
 /**
  * The row's working weight carried from the most recent StrongLifts block, so a
  * user switching back in doesn't have to re-guess it. Null when the row has
  * never been trained (the setup screen then requires an explicit entry).
+ *
+ * The UNITS come back with it, and are load-bearing: a completed block's runtime
+ * is frozen in the units that block ended in (`switchUnits` only converts the
+ * ACTIVE cycle), so a bare number handed to a setup screen running in the other
+ * unit is off by 2.2× in whichever direction hurts. Callers convert.
  */
-export function latestSlRowWeight(cycles: readonly Cycle[]): number | null {
+export function latestSlRowWeight(cycles: readonly Cycle[]): CarriedSlRowWeight | null {
   let best: Cycle | null = null;
   for (const c of cycles) {
     if (c.program !== 'sl5x5' || c.sl === undefined) continue;
     if (best === null || c.number > best.number) best = c;
   }
-  return best?.sl?.lifts.row.weight ?? null;
+  if (best?.sl === undefined) return null;
+  return { weight: best.sl.lifts.row.weight, units: best.units };
+}
+
+/**
+ * The carried row weight expressed in TODAY's units, rounded to the user's
+ * rounding increment — what the switch-in setup screen prefills.
+ *
+ * The conversion is the whole point: a completed block's runtime is frozen in
+ * the units that block ended in, so an lb block's 165 handed straight to a kg
+ * setup screen prefills 165 KG — 2.2× the real weight, under a chip that says
+ * the number can be trusted. Kg to lb runs the other way, at under half.
+ */
+export function carriedRowPrefill(
+  carried: CarriedSlRowWeight,
+  units: Units,
+  roundingIncrement: number,
+): number {
+  return roundToIncrement(convertWeight(carried.weight, carried.units, units), roundingIncrement);
+}
+
+/**
+ * The 'carried' chip's label. When the carried weight had to be CONVERTED to
+ * reach the current units, the chip names the original denomination — the chip
+ * is what makes the prefill look trustworthy, so it has to show its work:
+ * 'carried · 165 LB' next to a 75 KG stepper is checkable, 'carried' is not.
+ */
+export function carriedRowChipLabel(
+  carried: CarriedSlRowWeight,
+  currentUnits: Units,
+): string {
+  if (carried.units === currentUnits) return 'carried';
+  return `carried · ${fmtWeight(carried.weight)} ${carried.units.toUpperCase()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Switch-in setup validation
+// ---------------------------------------------------------------------------
+
+/** Inline copy under a switch-in weight that cannot start a block. */
+export const SL_WEIGHT_REQUIRED_COPY = 'Set a starting weight above zero to continue.';
+
+/** Inline copy under the Barbell Row when it has no carried weight to fall back on. */
+export const SL_ROW_REQUIRED_COPY = 'Enter a starting weight for the Barbell Row to continue.';
+
+/**
+ * Which of the five switch-in weights block the confirm — anything not finite
+ * and greater than zero. `completeCycleToSl` refuses these outright; this is the
+ * same rule stated in the setup screen so it surfaces as copy under the offending
+ * stepper rather than as a toast after the fact. Press-and-hold on a minus button
+ * reaches zero on any of the five, not only the row.
+ */
+export function slSetupBlockingLifts(weights: Record<SlLiftId, number>): SlLiftId[] {
+  return SL_LIFTS.filter((liftId) => {
+    const w = weights[liftId];
+    return !Number.isFinite(w) || w <= 0;
+  });
 }
 
 // ---------------------------------------------------------------------------

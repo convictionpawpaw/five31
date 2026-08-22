@@ -24,7 +24,7 @@ import {
 } from '../../db/repo/index.ts';
 import { Button, HudPanel, Modal, NumberStepper, useToast } from '../../components/index.ts';
 import { LIFT_NAMES, cycleTag, slSessionHeading } from '../shared/liftLabels.ts';
-import { fmtWeight } from '../shared/format.ts';
+import { fmtWeightOrDash } from '../shared/format.ts';
 import { useWakeLock } from '../workout/useWakeLock.ts';
 import {
   buildSlSessionView,
@@ -405,7 +405,7 @@ function LiftSection({
       <div className="sllift__head">
         <span className="label label-hi sllift__name">{LIFT_NAMES[lift.liftId]}</span>
         <span className="sllift__load">
-          <span className="num sllift__weight">{fmtWeight(lift.weight)}</span>
+          <span className="num sllift__weight">{fmtWeightOrDash(lift.weight)}</span>
           <span className="label sllift__unit">{units}</span>
           <span className="label sllift__scheme">
             {slSetCount(lift.liftId)}×5
@@ -559,7 +559,7 @@ function ProjectedBody({
           <div className="sllift__head">
             <span className="label label-hi sllift__name">{LIFT_NAMES[lift.liftId]}</span>
             <span className="sllift__load">
-              <span className="num sllift__weight">{fmtWeight(lift.weight)}</span>
+              <span className="num sllift__weight">{fmtWeightOrDash(lift.weight)}</span>
               <span className="label sllift__unit">{lift.workout.units.toUpperCase()}</span>
               {lift.basis === 'projected' && <span className="label sltag">Projected</span>}
             </span>
@@ -635,7 +635,7 @@ function ResolvedBody({
               <div key={lift.liftId} className="slsession__ro-row">
                 <span className="label label-hi">{LIFT_NAMES[lift.liftId]}</span>
                 <span className="slsession__ro-sets">
-                  <span className="num">{fmtWeight(lift.weight)}</span>
+                  <span className="num">{fmtWeightOrDash(lift.weight)}</span>
                   <span className="label text-mid">{lift.workout.units.toUpperCase()}</span>
                   <span className="label text-low">×</span>
                   <span className="num">

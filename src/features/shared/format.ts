@@ -9,6 +9,15 @@ export function fmtWeight(weight: number): string {
   return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
+/**
+ * A weight that may not exist — a StrongLifts session skipped before it was ever
+ * started has none. Renders the em-dash placeholder rather than substituting a
+ * live or projected number, which in a resolved slot would read as history.
+ */
+export function fmtWeightOrDash(weight: number | null): string {
+  return weight === null ? '—' : fmtWeight(weight);
+}
+
 /** Weight with its unit suffix, e.g. '170 LB' / '82.5 KG'. */
 export function fmtWeightUnit(weight: number, units: Units): string {
   return `${fmtWeight(weight)} ${units.toUpperCase()}`;

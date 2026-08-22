@@ -4,6 +4,7 @@ import type {
   SlLiftId,
   SlLiftRuntime,
   SlSlot,
+  Units,
   Workout,
 } from '../../core/types.ts';
 import {
@@ -147,6 +148,13 @@ export async function startSlSession(cycleId: string, session: number): Promise<
         startedAt: now,
         tmUsed: weight,
         mainSets: buildSlMainSets(weight, w.liftId),
+        // UNITS COME FROM THE CYCLE, not from the row. The weight above is read
+        // from `sl.lifts`, which `switchUnits` converts in place; a pending row
+        // built before that switch still carries the OLD units label. Spreading
+        // `...w` would therefore freeze converted kilos under the word 'lb' —
+        // permanently, since a completed row is history. The two must be stamped
+        // from the same source, and the cycle is that source.
+        units: cycle.units,
         accessoryWork: [], // StrongLifts blocks never carry accessory work
       };
     });
@@ -273,7 +281,9 @@ export async function unskipSlSession(cycleId: string, session: number): Promise
     }
 
     const slot = slSlotForSession(session);
-    await db.workouts.bulkPut(rows.map((w) => freshPendingSlRow(w, session, slot)));
+    await db.workouts.bulkPut(
+      rows.map((w) => freshPendingSlRow(w, session, slot, cycle.units)),
+    );
   });
 }
 
@@ -281,9 +291,14 @@ export async function unskipSlSession(cycleId: string, session: number): Promise
  * Rebuild an SL row in the exact shape `buildSlCycleWorkouts` produces, so an
  * un-skipped session is indistinguishable from one that was never touched. Keys
  * are written explicitly (never `startedAt: undefined`), so no phantom key
- * survives into the stored record.
+ * survives into the stored record. `units` is the CYCLE's, not the old row's.
  */
-function freshPendingSlRow(w: Workout, session: number, slSlot: SlSlot): Workout {
+function freshPendingSlRow(
+  w: Workout,
+  session: number,
+  slSlot: SlSlot,
+  units: Units,
+): Workout {
   const row: Workout = {
     id: w.id,
     cycleId: w.cycleId,
@@ -294,7 +309,10 @@ function freshPendingSlRow(w: Workout, session: number, slSlot: SlSlot): Workout
     tmUsed: 0,
     mainSets: [],
     accessoryWork: [],
-    units: w.units,
+    // Same rule as the stamp: units follow the CYCLE. An un-skip after a unit
+    // switch must not resurrect the row's stale label, or the re-stamp would
+    // write converted weights under it.
+    units,
     program: 'sl5x5',
     session,
     slSlot,
@@ -318,9 +336,39 @@ export async function logSlSet(
   await logMainSet(workoutId, 'work', index, actualReps);
 }
 
+/** Refusal copy when an override would collide with the session in flight. */
+export const SL_OVERRIDE_IN_FLIGHT_ERROR =
+  'Finish the session in flight first — the override applies from the next session.';
+
+/**
+ * Whether overriding `liftId` right now would collide with the session in
+ * flight: the earliest unresolved session has already been STAMPED (its rows
+ * are in_progress) AND it trains this lift.
+ *
+ * The reason this is a refusal rather than a silent no-op is progression.
+ * `finishSlSession` advances each lift from the block's LIVE runtime, not from
+ * the weight frozen on the row — so an override applied mid-session is not
+ * ignored, it is compounded: a pass writes override + increment, and a third
+ * miss deloads to 90% of a weight that was never actually lifted. Blocking the
+ * write is what makes the modal's promise ("applies from the next session") true.
+ *
+ * Exported so the modal can DISABLE the control and say why, instead of letting
+ * the user commit and then explaining the rejection.
+ */
+export function slOverrideBlockedByInFlight(
+  workouts: readonly Workout[],
+  liftId: SlLiftId,
+): boolean {
+  const session = earliestUnresolvedSlSession(workouts);
+  if (session === null) return false;
+  const rows = workouts.filter((w) => w.session === session);
+  if (!rows.some((w) => w.status === 'in_progress')) return false;
+  return rows.some((w) => w.liftId === liftId);
+}
+
 /**
  * Override the working weight one lift will use from its NEXT session onward,
- * in ONE transaction over `cycles`.
+ * in ONE transaction over `cycles` + `workouts`.
  *
  * Scope is deliberately narrow — this is the cycle screen's weight chip, the
  * StrongLifts analogue of a TM override:
@@ -328,11 +376,14 @@ export async function logSlSet(
  *    the `failStreak` are PRESERVED: a manual correction is not an assertion
  *    that the misses never happened, and silently clearing the streak would
  *    postpone a deload the lift has already earned.
- *  - NO workout row is touched, which is why `workouts` is not in the
- *    transaction scope. Already-stamped rows are frozen (history, or a session
- *    in flight that must keep the weight it opened at) and every later session
- *    is unstamped, so future sessions pick the new weight up on their next
- *    start. "Future sessions only" is therefore structural, not a filter.
+ *  - NO workout row is written. `workouts` is in the transaction scope to be
+ *    READ, for the in-flight guard below. Already-stamped rows are frozen
+ *    (history) and every later session is unstamped, so future sessions pick the
+ *    new weight up on their next start: "future sessions only" is structural.
+ *  - a lift trained by the session CURRENTLY IN FLIGHT is refused outright
+ *    ({@link slOverrideBlockedByInFlight}), because that session's finish would
+ *    otherwise progress ON TOP of the new weight. A lift the in-flight session
+ *    does not train — the press while an A-session is open — is unaffected.
  */
 export async function overrideSlLiftWeight(
   cycleId: string,
@@ -342,9 +393,13 @@ export async function overrideSlLiftWeight(
   if (!Number.isFinite(weight) || weight <= 0) {
     throw new Error('A StrongLifts working weight must be greater than zero.');
   }
-  await db.transaction('rw', db.cycles, async () => {
+  await db.transaction('rw', db.cycles, db.workouts, async () => {
     const { cycle, sl } = await requireActiveSlCycle(cycleId);
     const current = runtimeFor(sl, liftId);
+    const all = await db.workouts.where('cycleId').equals(cycle.id).toArray();
+    if (slOverrideBlockedByInFlight(all, liftId)) {
+      throw new Error(SL_OVERRIDE_IN_FLIGHT_ERROR);
+    }
     await db.cycles.put({
       ...cycle,
       sl: { ...sl, lifts: { ...sl.lifts, [liftId]: { ...current, weight } } },

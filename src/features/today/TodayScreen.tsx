@@ -14,7 +14,7 @@ import {
 } from '../../db/repo/index.ts';
 import { Button, HudPanel, NumberStepper, PrBadge, useToast } from '../../components/index.ts';
 import { cycleTag, LIFT_NAMES, slSessionHeading, weekLabel } from '../shared/liftLabels.ts';
-import { fmtTargetReps, fmtWeight } from '../shared/format.ts';
+import { fmtTargetReps, fmtWeight, fmtWeightOrDash } from '../shared/format.ts';
 import {
   isCycleResolved,
   lastCompletedWorkout,
@@ -318,7 +318,7 @@ function SlNextSessionCard({
           <div key={lift.liftId} className="today__sllift">
             <span className="label label-hi">{LIFT_NAMES[lift.liftId]}</span>
             <span className="today__sllift-load">
-              <span className="num num-md text-amber">{fmtWeight(lift.weight)}</span>
+              <span className="num num-md text-amber">{fmtWeightOrDash(lift.weight)}</span>
               <span className="label text-mid">{lift.workout.units.toUpperCase()}</span>
               <span className="label text-low">
                 {lift.sets.length}×{lift.sets[0]?.targetReps ?? 5}
@@ -380,7 +380,7 @@ function SlLastSessionSummary({
           <div key={lift.liftId} className="today__last-row">
             <span className="label label-hi">{LIFT_NAMES[lift.liftId]}</span>
             <span className="today__last-amrap">
-              <span className="num num-md">{fmtWeight(lift.weight)}</span>
+              <span className="num num-md">{fmtWeightOrDash(lift.weight)}</span>
               <span className="label text-mid">
                 {lift.workout.units.toUpperCase()} ×{' '}
                 {lift.sets.map((s) => s.actualReps ?? '—').join('/')}

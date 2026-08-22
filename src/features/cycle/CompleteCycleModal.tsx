@@ -26,13 +26,18 @@ import { Button, Modal, NumberStepper, useToast } from '../../components/index.t
 import { cycleTag, LIFT_NAMES, weekLabel } from '../shared/liftLabels.ts';
 import { fmtWeight } from '../shared/format.ts';
 import {
+  SL_ROW_REQUIRED_COPY,
   SL_ROW_START_COPY,
   SL_SWITCH_IN_WEIGHT_COPY,
+  SL_WEIGHT_REQUIRED_COPY,
   bestSlEffortsByLift,
+  carriedRowChipLabel,
+  carriedRowPrefill,
   keepPrsCopy,
   latestSlRowWeight,
   slDeadliftIncrementCopy,
   slReturnBasisCopy,
+  slSetupBlockingLifts,
   slStreakPips,
 } from '../sl/slView.ts';
 import '../sl/sl.css';
@@ -170,11 +175,23 @@ function ClassicCompleteModal({
     () => slSwitchInSuggestions(currentTms, settings.roundingIncrement),
     [currentTms, settings.roundingIncrement],
   );
+  // The carried row weight is denominated in the units of the block it came
+  // FROM — a completed block's runtime is frozen in the units it ended in — so
+  // it is converted into today's units before it can be prefilled. Handing the
+  // raw number over would prefill '165 KG' from a 165 LB block: 2.2× the real
+  // weight, wearing a 'carried' chip that says it can be trusted.
   const carriedRow = useMemo(() => latestSlRowWeight(cycles), [cycles]);
+  const carriedRowWeight = useMemo(
+    () =>
+      carriedRow === null
+        ? null
+        : carriedRowPrefill(carriedRow, settings.units, settings.roundingIncrement),
+    [carriedRow, settings.units, settings.roundingIncrement],
+  );
   const [slWeights, setSlWeights] = useState<Record<SlLiftId, number>>(() => ({
     squat: suggested.squat,
     bench: suggested.bench,
-    row: carriedRow ?? 0, // 0 = not chosen yet; the confirm is gated on it
+    row: carriedRowWeight ?? 0, // 0 = not chosen yet; the confirm is gated on it
     press: suggested.press,
     deadlift: suggested.deadlift,
   }));
@@ -192,16 +209,22 @@ function ClassicCompleteModal({
   const resetTo90 = (liftId: LiftId) =>
     setTm(liftId, roundToIncrement(currentTms[liftId] * 0.9, settings.roundingIncrement));
 
-  const rowMissing = slWeights.row <= 0;
+  // Every one of the five weights gates the confirm, not just the row: the
+  // steppers clamp at min 0, so a press-and-hold on any minus button reaches
+  // zero, and completeCycleToSl refuses all five alike. The reason shows as copy
+  // under the offending stepper — a toast fired after the tap would not say
+  // WHICH lift, and would have scrolled past the one that needs the fix.
+  const blockingLifts = slSetupBlockingLifts(slWeights);
+  const slSetupBlocked = blockingLifts.length > 0;
 
   const confirm = async () => {
     if (busy) return;
     setBusy(true);
     try {
       if (choice === 'sl5x5') {
-        if (rowMissing) {
+        // Defence in depth; the button is disabled while this holds.
+        if (slSetupBlocked) {
           setBusy(false);
-          toast.show('Enter a Barbell Row starting weight', 'danger');
           return;
         }
         // completeCycleToSl consumes the armed switch itself, inside its txn.
@@ -281,7 +304,9 @@ function ClassicCompleteModal({
                 <div className="ccmodal__lift-head">
                   <span className="label label-hi">{LIFT_NAMES[liftId]}</span>
                   {liftId === 'row' && carriedRow !== null && (
-                    <span className="ccchip ccchip--hold label">carried</span>
+                    <span className="ccchip ccchip--hold label">
+                      {carriedRowChipLabel(carriedRow, settings.units)}
+                    </span>
                   )}
                 </div>
                 <div className="ccmodal__lift-edit">
@@ -295,9 +320,9 @@ function ClassicCompleteModal({
                   />
                 </div>
                 {liftId === 'row' && <p className="ccmodal__copy">{SL_ROW_START_COPY}</p>}
-                {liftId === 'row' && rowMissing && (
+                {blockingLifts.includes(liftId) && (
                   <p className="ccmodal__copy text-danger">
-                    Enter a starting weight for the Barbell Row to continue.
+                    {liftId === 'row' ? SL_ROW_REQUIRED_COPY : SL_WEIGHT_REQUIRED_COPY}
                   </p>
                 )}
                 <div className="ccmodal__lift-edit">
@@ -324,7 +349,12 @@ function ClassicCompleteModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" block onClick={confirm} disabled={busy}>
+          <Button
+            variant="primary"
+            block
+            onClick={confirm}
+            disabled={busy || (choice === 'sl5x5' && slSetupBlocked)}
+          >
             {choice === 'sl5x5' ? 'Start 5×5 Block' : 'Confirm'}
           </Button>
         </div>

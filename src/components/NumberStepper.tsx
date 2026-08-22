@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { decimalsForStep, formatStepperValue } from './stepperFormat.ts';
 import './NumberStepper.css';
 
 export interface NumberStepperProps {
@@ -26,18 +27,6 @@ function clamp(n: number, min: number, max: number): number {
 /** Round away binary float noise from repeated ± of fractional steps. */
 function normalize(n: number): number {
   return Math.round(n * 1000) / 1000;
-}
-
-/**
- * Number of decimal places a step implies, so the displayed value never rounds
- * away a committed fraction (step 2.5 → 1; step 1.25 → 2; integer step → 0).
- * Capped at 3 to match `normalize`'s precision.
- */
-function decimalsForStep(step: number): number {
-  if (Number.isInteger(step)) return 0;
-  const s = String(step);
-  const dot = s.indexOf('.');
-  return dot === -1 ? 0 : Math.min(3, s.length - dot - 1);
 }
 
 /**
@@ -96,8 +85,11 @@ export function NumberStepper({
     [bump, disabled, stop],
   );
 
+  // `dp` is the precision CEILING; formatStepperValue trims the padding so the
+  // number under the buttons is the number that will be committed — a whole
+  // 285 reads '285', never '285.0' beside a fmtWeight'd '285' in the same row.
   const dp = decimals ?? decimalsForStep(step);
-  const display = value.toFixed(dp);
+  const display = formatStepperValue(value, dp);
 
   const atMin = value <= min;
   const atMax = value >= max;

@@ -11,6 +11,8 @@ import {
   bestSlEffortsByLift,
   buildSlSessionView,
   canUnskipSlSession,
+  carriedRowChipLabel,
+  carriedRowPrefill,
   countUnloggedSlSets,
   lastCompletedSlSession,
   latestSlRowWeight,
@@ -20,6 +22,7 @@ import {
   slSessionMode,
   slSessionRows,
   slSessionStatus,
+  slSetupBlockingLifts,
   slStreakPips,
 } from '../slView.ts';
 import { slSessionHeading } from '../../shared/liftLabels.ts';
@@ -100,6 +103,31 @@ describe('buildSlSessionView', () => {
     expect(squat.weight).toBe(999);
     expect(squat.sets).toHaveLength(5);
     expect(squat.allLogged).toBe(true);
+  });
+
+  it('shows NO weight for a session skipped before it was ever started', () => {
+    // The bug: a resolved-but-unstamped row fell through to the unstamped
+    // branch, where every earlier session is resolved so occurrencesBefore is 0
+    // — which handed it basis 'current' and the block's LIVE working weight. A
+    // settled piece of history then tracked today's weight, changing after every
+    // later session.
+    let block = playInBlock(slBlock(), 1, { status: 'skipped' });
+    block = playInBlock(block, 2); // a later session moves the runtime on
+    const view = buildSlSessionView(block, 1, slState({ squat: 999 }));
+    expect(view.lifts.map((l) => l.weight)).toEqual([null, null, null]);
+    expect(view.lifts.every((l) => l.basis === 'none')).toBe(true);
+    expect(view.lifts.every((l) => l.sets.length === 0)).toBe(true);
+  });
+
+  it('still shows the frozen weight for a session that was STARTED and then skipped', () => {
+    // Stamped rows keep their history even when the session ends as a skip.
+    const started = playInBlock(slBlock(), 1, { status: 'in_progress' });
+    const block = started.map((w) =>
+      w.session === 1 ? { ...w, status: 'skipped' as const } : w,
+    );
+    const view = buildSlSessionView(block, 1, slState({ squat: 999 }));
+    expect(view.lifts[0]!.weight).toBe(WEIGHTS.squat);
+    expect(view.lifts[0]!.basis).toBe('stamped');
   });
 
   it('builds a 5×5 preview for every lift but the deadlift, which is 1×5', () => {
@@ -228,18 +256,72 @@ describe('bestSlEffortsByLift', () => {
 });
 
 describe('latestSlRowWeight', () => {
-  it('carries the row weight forward from the most recent prior block', () => {
+  it('carries the row weight forward from the most recent prior block, WITH its units', () => {
     const cycles = [
       classicCycle(1),
       slCycle(2, slState({ row: 120 }), 'completed'),
       slCycle(4, slState({ row: 150 }), 'completed'),
       slCycle(3, slState({ row: 135 }), 'completed'),
     ];
-    expect(latestSlRowWeight(cycles)).toBe(150);
+    // The units are the SOURCE block's, not the app's: a completed block's
+    // runtime is frozen in whatever it ended in, and the caller must convert.
+    expect(latestSlRowWeight(cycles)).toEqual({ weight: 150, units: 'lb' });
+  });
+
+  it('reports the source block units even when they differ from today', () => {
+    const kgBlock = { ...slCycle(2, slState({ row: 70 }), 'completed'), units: 'kg' as const };
+    expect(latestSlRowWeight([kgBlock])).toEqual({ weight: 70, units: 'kg' });
   });
 
   it('is null when the row has never been trained', () => {
     expect(latestSlRowWeight([classicCycle(1)])).toBeNull();
+  });
+});
+
+describe('carriedRowPrefill (the switch-in Row prefill vector)', () => {
+  it('converts an lb block’s row weight into a kg setup screen', () => {
+    // 165 lb = 74.84 kg -> 75 on the kg/2.5 grid. Prefilling the raw 165 as KG
+    // would have set the new block’s row at ~364 lb, and every A-session
+    // prescription with it, behind a chip claiming the number was carried.
+    expect(carriedRowPrefill({ weight: 165, units: 'lb' }, 'kg', 2.5)).toBe(75);
+    expect(carriedRowPrefill({ weight: 135, units: 'lb' }, 'kg', 2.5)).toBe(60); // 61.24 -> 60
+  });
+
+  it('converts the other way, and is a no-op when the units already match', () => {
+    expect(carriedRowPrefill({ weight: 75, units: 'kg' }, 'lb', 5)).toBe(165);
+    expect(carriedRowPrefill({ weight: 165, units: 'lb' }, 'lb', 5)).toBe(165);
+    expect(carriedRowPrefill({ weight: 62.5, units: 'kg' }, 'kg', 2.5)).toBe(62.5);
+  });
+
+  it('rounds to the user’s increment, not the unit default', () => {
+    expect(carriedRowPrefill({ weight: 165, units: 'lb' }, 'kg', 1.25)).toBe(75);
+    expect(carriedRowPrefill({ weight: 137, units: 'lb' }, 'lb', 2.5)).toBe(137.5);
+  });
+});
+
+describe('carriedRowChipLabel', () => {
+  it("is a bare 'carried' when no conversion happened", () => {
+    expect(carriedRowChipLabel({ weight: 150, units: 'lb' }, 'lb')).toBe('carried');
+  });
+
+  it('names the ORIGINAL denomination when the weight had to be converted', () => {
+    // Without this the chip asserts a prefill is trustworthy while hiding the
+    // one fact that would let the user check it.
+    expect(carriedRowChipLabel({ weight: 165, units: 'lb' }, 'kg')).toBe('carried · 165 LB');
+    expect(carriedRowChipLabel({ weight: 62.5, units: 'kg' }, 'lb')).toBe('carried · 62.5 KG');
+  });
+});
+
+describe('slSetupBlockingLifts', () => {
+  it('is empty when all five opening weights are positive', () => {
+    expect(slSetupBlockingLifts(WEIGHTS)).toEqual([]);
+  });
+
+  it('names every non-positive weight, not just the row', () => {
+    // The steppers clamp at min 0, so press-and-hold reaches zero on any lift.
+    expect(slSetupBlockingLifts({ ...WEIGHTS, squat: 0 })).toEqual(['squat']);
+    expect(slSetupBlockingLifts({ ...WEIGHTS, squat: 0, row: 0 })).toEqual(['squat', 'row']);
+    expect(slSetupBlockingLifts({ ...WEIGHTS, press: Number.NaN })).toEqual(['press']);
   });
 });
 

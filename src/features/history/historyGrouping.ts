@@ -132,12 +132,37 @@ export function isSlCycle(cycle: Cycle): boolean {
 export interface SlHistoryCluster {
   session: number;
   slot: SlSlot;
-  /** Chronological key of the session (its earliest row) — the header date. */
-  dateKey: string;
+  /**
+   * Chronological key of the session (its earliest row) — the header date, or
+   * NULL when the session carries no timestamp of its own (a session skipped
+   * before it was ever started). The header then renders WITHOUT a date: the
+   * only other candidate is the row's ULID, which encodes the moment all 36
+   * rows were bulk-created at block start, and dating a skip to the block's
+   * birthday is worse than not dating it at all.
+   */
+  dateKey: string | null;
   /** The session's lift rows in PERFORMANCE order (squat first). */
   rows: HistoryRow[];
   /** True when every row was skipped — the cluster renders as SKIPPED. */
   skipped: boolean;
+}
+
+/**
+ * The session's OWN earliest timestamp: the minimum of every row's
+ * `completedAt ?? startedAt`, or null when not one row carries either. The
+ * classic history row uses `completedAt ?? startedAt ?? id`; the id fallback is
+ * dropped here on purpose (see {@link SlHistoryCluster.dateKey}) — a
+ * started-then-skipped session still dates from its `startedAt`, and one that
+ * was never started gets no date rather than a false one.
+ */
+function sessionDateKey(rows: readonly HistoryRow[]): string | null {
+  let earliest: string | null = null;
+  for (const r of rows) {
+    const key = r.workout.completedAt ?? r.workout.startedAt;
+    if (key === undefined) continue;
+    if (earliest === null || key.localeCompare(earliest) < 0) earliest = key;
+  }
+  return earliest;
 }
 
 /**
@@ -168,9 +193,7 @@ export function clusterSlRowsBySession(rows: readonly HistoryRow[]): SlHistoryCl
         (order as readonly SlLiftId[]).indexOf(a.workout.liftId) -
         (order as readonly SlLiftId[]).indexOf(b.workout.liftId),
     );
-    const dateKey = ordered
-      .map((r) => completedKey(r.workout))
-      .reduce((a, b) => (a.localeCompare(b) <= 0 ? a : b));
+    const dateKey = sessionDateKey(ordered);
     clusters.push({
       session,
       slot,

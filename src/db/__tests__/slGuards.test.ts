@@ -16,7 +16,13 @@ import {
   startWorkout,
   unskipWorkout,
 } from '../repo/workoutRepo.ts';
-import { finishSlSession, logSlSet, startSlSession } from '../repo/slRepo.ts';
+import {
+  finishSlSession,
+  logSlSet,
+  skipSlSession,
+  startSlSession,
+  unskipSlSession,
+} from '../repo/slRepo.ts';
 import { applyTmOverride } from '../repo/tmOverrideRepo.ts';
 import { switchUnits } from '../repo/unitsRepo.ts';
 import { db } from '../db.ts';
@@ -188,7 +194,7 @@ describe('switchUnits during a StrongLifts block', () => {
     expect((await getActiveCycle())!.sl!.lifts.squat.failStreak).toBe(1);
   });
 
-  it('does NOT touch StrongLifts workout rows — stamped rows stay frozen, pending stay empty', async () => {
+  it('leaves STAMPED rows frozen and only RELABELS the never-stamped ones', async () => {
     const block = await seedSlBlock();
     await startSlSession(block.id, 1);
     const stampedBefore = await sessionRows(block.id, 1);
@@ -202,24 +208,64 @@ describe('switchUnits during a StrongLifts block', () => {
       255, 255, 255, 255, 255,
     ]);
 
-    // Pending rows were never regenerated from a TM percentage scheme.
+    // Pending rows were never regenerated from a TM percentage scheme — they
+    // still carry no sets at all. What DOES change is the units label: they hold
+    // no weight yet, and the block they belong to is now denominated in kg, so
+    // leaving them marked 'lb' would be a claim about weights they do not have.
     const pending = (await getCycleWorkouts(block.id)).filter((w) => w.status === 'pending');
     expect(pending).toHaveLength(33);
     expect(pending.every((w) => w.mainSets.length === 0 && w.tmUsed === 0)).toBe(true);
+    expect(pending.every((w) => w.units === 'kg')).toBe(true);
   });
 
-  it('re-stamps the NEXT session from the converted runtime', async () => {
+  it('re-stamps the NEXT session from the converted runtime, UNDER THE NEW UNITS', async () => {
     const block = await seedSlBlock();
     await switchUnits('kg');
     const rows = await startSlSession(block.id, 1);
     const expected = roundToIncrement(convertWeight(SL_WEIGHTS.squat, 'lb', 'kg'), 2.5);
-    expect(rows.find((w) => w.liftId === 'squat')!.mainSets.map((s) => s.weight)).toEqual([
+    const squat = rows.find((w) => w.liftId === 'squat')!;
+    expect(squat.mainSets.map((s) => s.weight)).toEqual([
       expected,
       expected,
       expected,
       expected,
       expected,
     ]);
+    // THE BUG THIS PINS: the stamp spread `...w`, which kept the row's stale
+    // 'lb' label while tmUsed/mainSets took the CONVERTED kg weight from the
+    // runtime. Once completed, that row is frozen forever as kilos labelled
+    // pounds, and every consumer that converts by `w.units` double-converts it.
+    expect(squat.units).toBe('kg');
+    expect(squat.tmUsed).toBe(expected);
+    expect(rows.every((w) => w.units === 'kg')).toBe(true);
+
+    // ...and it survives the finish, which is where it would become permanent.
+    for (const w of rows) for (const set of w.mainSets) await logSlSet(w.id, set.index, 5);
+    await finishSlSession(block.id, 1);
+    expect((await sessionRows(block.id, 1)).every((w) => w.units === 'kg')).toBe(true);
+  });
+
+  it('UNSKIP after a unit switch re-stamps under the new units, not the old row label', async () => {
+    // The same root cause on the un-skip path: freshPendingSlRow rebuilt the row
+    // from the OLD row's `units`, so an un-skip-then-restart after a switch put
+    // converted weights back under the stale label.
+    const block = await seedSlBlock();
+    await skipSlSession(block.id, 1);
+    await switchUnits('kg');
+
+    const skipped = await sessionRows(block.id, 1);
+    expect(skipped.every((w) => w.units === 'kg')).toBe(true); // never-stamped: relabelled
+
+    await unskipSlSession(block.id, 1);
+    expect((await sessionRows(block.id, 1)).every((w) => w.units === 'kg' && w.tmUsed === 0)).toBe(
+      true,
+    );
+
+    const rows = await startSlSession(block.id, 1);
+    const expected = roundToIncrement(convertWeight(SL_WEIGHTS.squat, 'lb', 'kg'), 2.5);
+    const squat = rows.find((w) => w.liftId === 'squat')!;
+    expect(squat.units).toBe('kg');
+    expect(squat.tmUsed).toBe(expected);
   });
 
   it('leaves a classic cycle converting exactly as before', async () => {

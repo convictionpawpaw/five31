@@ -14,7 +14,7 @@ import {
   removeDeloadPlan,
   type CycleLiftInput,
 } from '../../core/cycle.ts';
-import { buildSlCycleState, buildSlCycleWorkouts } from '../../core/sl.ts';
+import { SL_LIFTS, buildSlCycleState, buildSlCycleWorkouts } from '../../core/sl.ts';
 import { db } from '../db.ts';
 import { requireSettings, settingsAfterProgramSwitch } from './settingsRepo.ts';
 
@@ -218,6 +218,23 @@ export interface CompleteCycleToSlArgs {
 }
 
 /**
+ * Reject a StrongLifts opening weight or increment that could never train
+ * anything. Mirrors `overrideSlLiftWeight`'s rule and its error style, because
+ * it is the same rule: the two functions are the only writers of `sl.lifts`.
+ *
+ * A zero weight would stamp 5×0 rows into history and into the e1RM/PR series; a
+ * zero increment would freeze the lift's progression forever (which is exactly
+ * why `switchUnits` carries its own zero-increment fallback). Both are reachable
+ * from a press-and-hold on a minus button, and neither is recoverable once the
+ * block's 36 rows exist.
+ */
+function assertPositiveSlValue(value: number, what: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`A StrongLifts ${what} must be greater than zero.`);
+  }
+}
+
+/**
  * Close the active 5/3/1 cycle and open a StrongLifts block in ITS PLACE, in ONE
  * transaction over `settings` + `cycles` + `workouts`.
  *
@@ -233,6 +250,13 @@ export interface CompleteCycleToSlArgs {
  */
 export async function completeCycleToSl(args: CompleteCycleToSlArgs): Promise<Cycle> {
   const { weights, increments, keepPrs } = args;
+
+  // Validate BEFORE the transaction: nothing here reads the database, and a
+  // rejection should never have opened one.
+  for (const liftId of SL_LIFTS) {
+    assertPositiveSlValue(weights[liftId], `${liftId} working weight`);
+    assertPositiveSlValue(increments[liftId], `${liftId} increment`);
+  }
 
   return db.transaction('rw', db.settings, db.cycles, db.workouts, async () => {
     const settings = await requireSettings();
