@@ -1,4 +1,4 @@
-import type { LiftId, Units, Workout } from '../../core/types.ts';
+import type { SlLiftId, Units, Workout } from '../../core/types.ts';
 import { epley } from '../../core/e1rm.ts';
 import { convertWeight } from '../../core/units.ts';
 import { computePrTimeline, type AmrapEffort } from '../../core/prs.ts';
@@ -31,7 +31,7 @@ export function countUnloggedSets(w: Workout): number {
  */
 export function bestE1rmForLift(
   workouts: readonly Workout[],
-  liftId: LiftId,
+  liftId: SlLiftId,
   targetUnits: Units,
   excludeId?: string,
 ): number | null {

@@ -39,6 +39,11 @@ function hasLoggedAccessoryReps(accessoryWork: readonly AccessoryWork[]): boolea
  */
 async function accessoryWorkForStart(w: Workout): Promise<AccessoryWork[]> {
   if (hasLoggedAccessoryReps(w.accessoryWork)) return w.accessoryWork;
+  // Narrowing, not a guard: accessory DAYS are keyed by the four 5/3/1 lifts, so
+  // the row has none by construction. (The real "never stamp accessories on a
+  // StrongLifts row" guard is a separate concern — this branch is unreachable
+  // until StrongLifts rows exist.)
+  if (w.liftId === 'row') return [];
   return stampAccessoryWork(w.liftId);
 }
 

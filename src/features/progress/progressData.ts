@@ -3,6 +3,7 @@ import type {
   BodyweightEntry,
   Cycle,
   LiftId,
+  SlLiftId,
   Units,
   Workout,
 } from '../../core/types.ts';
@@ -87,7 +88,8 @@ export function buildE1rmSeries(
 /** One row of the reverse-chronological PR list. */
 export interface PrListEntry {
   workoutId: string;
-  liftId: LiftId;
+  /** Widened with `workout.liftId`, so a StrongLifts row PR can appear here. */
+  liftId: SlLiftId;
   date: string;
   weight: number;
   reps: number;
@@ -101,7 +103,7 @@ export interface PrListEntry {
  * effort's units per lift), preserving the values as logged.
  */
 export function buildPrList(workouts: readonly Workout[]): PrListEntry[] {
-  const byLift = new Map<LiftId, Workout[]>();
+  const byLift = new Map<SlLiftId, Workout[]>();
   for (const w of workouts) {
     if (w.status !== 'completed') continue;
     const set = amrapSet(w);

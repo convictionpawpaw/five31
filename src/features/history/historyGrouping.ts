@@ -1,4 +1,4 @@
-import type { Cycle, LiftId, Units, Workout } from '../../core/types.ts';
+import type { Cycle, SlLiftId, Units, Workout } from '../../core/types.ts';
 import { convertWeight } from '../../core/units.ts';
 import { computePrTimeline, type AmrapEffort } from '../../core/prs.ts';
 import { amrapSet } from '../shared/workoutSelect.ts';
@@ -39,7 +39,9 @@ function completedKey(w: Workout): string {
  * and workouts with no logged AMRAP never appear.
  */
 export function computePrWorkoutIds(workouts: readonly Workout[]): Set<string> {
-  const byLift = new Map<LiftId, Workout[]>();
+  // Keyed by SlLiftId: the bucket key is `workout.liftId`, which now spans the
+  // StrongLifts row as well. Grouping/PR math is unchanged.
+  const byLift = new Map<SlLiftId, Workout[]>();
   for (const w of workouts) {
     if (w.status !== 'completed') continue;
     const set = amrapSet(w);

@@ -1,9 +1,13 @@
-import type { LiftId, MainSet, Workout } from '../../core/types.ts';
+import type { LiftId, MainSet, SlLiftId, Workout } from '../../core/types.ts';
 import { normalizeDayOrder } from '../../core/scheme.ts';
 
-/** Rank a lift by its position in the given training-day order. */
-function dayRank(liftId: LiftId, order: readonly LiftId[]): number {
-  const i = order.indexOf(liftId);
+/**
+ * Rank a lift by its position in the given training-day order. Accepts any
+ * {@link SlLiftId} because it is fed `workout.liftId`; a lift not in the order
+ * (i.e. the StrongLifts-only row) ranks last, exactly as any unknown id does.
+ */
+function dayRank(liftId: SlLiftId, order: readonly LiftId[]): number {
+  const i = (order as readonly SlLiftId[]).indexOf(liftId);
   return i === -1 ? order.length : i;
 }
 

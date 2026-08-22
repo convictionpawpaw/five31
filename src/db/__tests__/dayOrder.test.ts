@@ -14,7 +14,7 @@ import {
   makeWorkoutOrderComparator,
   selectNextWorkout,
 } from '../../features/shared/workoutSelect.ts';
-import type { LiftId } from '../../core/types.ts';
+import type { LiftId, SlLiftId } from '../../core/types.ts';
 
 beforeEach(resetDb);
 
@@ -33,7 +33,7 @@ const FINAL_TMS: Record<LiftId, number> = {
  * use. (Raw table reads are id-ordered, not generation-ordered; ordering is
  * derived at display time, which is the whole point of the feature.)
  */
-async function weekOrder(cycleId: string, week: number, order?: LiftId[]): Promise<LiftId[]> {
+async function weekOrder(cycleId: string, week: number, order?: LiftId[]): Promise<SlLiftId[]> {
   const ws = await getCycleWorkouts(cycleId);
   return [...ws]
     .sort(makeWorkoutOrderComparator(order))

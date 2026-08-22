@@ -7,7 +7,7 @@
  * chunk C5 adds under src/db. It is NOT part of any export schema path — the
  * data it produces is ordinary data.
  */
-import type { LiftId } from '../core/types.ts';
+import type { LiftId, SlLiftId } from '../core/types.ts';
 import { DAY_ORDER } from '../core/scheme.ts';
 import { cycleAdvancePlan } from '../core/cycle.ts';
 import { defaultAccessoryIncrement, defaultLiftIncrements } from '../core/units.ts';
@@ -131,9 +131,13 @@ export async function seedDemoData(cycleCount: number): Promise<void> {
           break;
         }
 
+        // DAY_ORDER is read through the wider SlLiftId element type only so the
+        // now-widened `workout.liftId` type-checks. The seeder only ever builds
+        // classic 5/3/1 cycles, so every id here is still a LiftId.
+        const dayOrder = DAY_ORDER as readonly SlLiftId[];
         const workouts = (await getCycleWorkouts(active.id)).sort((a, b) => {
           if (a.week !== b.week) return a.week - b.week;
-          return DAY_ORDER.indexOf(a.liftId) - DAY_ORDER.indexOf(b.liftId);
+          return dayOrder.indexOf(a.liftId) - dayOrder.indexOf(b.liftId);
         });
 
         for (const w of workouts) {
