@@ -1,5 +1,5 @@
 import { ulid } from 'ulid';
-import type { LiftId, Units } from '../../core/types.ts';
+import type { LiftId, SlCycleState, SlLiftRuntime, Units } from '../../core/types.ts';
 import { DAY_ORDER } from '../../core/scheme.ts';
 import { applyTmOverridePlan, type CycleLiftInput } from '../../core/cycle.ts';
 import { convertWeight, defaultLiftIncrements, defaultRoundingIncrement } from '../../core/units.ts';
@@ -59,29 +59,45 @@ export async function switchUnits(to: Units): Promise<void> {
         });
       }
 
-      // 2. Active cycle: convert snapshot, set units, regenerate pending workouts.
+      // 2. Active cycle: convert snapshot (plus any StrongLifts runtime), set
+      //    units, and regenerate pending workouts.
       const active = await db.cycles.where('status').equals('active').first();
       if (active) {
         const convertedCycleTms = { ...active.tms };
         for (const liftId of DAY_ORDER) {
           convertedCycleTms[liftId] = newTms[liftId] ?? convertTm(active.tms[liftId]);
         }
-        await db.cycles.put({ ...active, tms: convertedCycleTms, units: to });
+        const convertedSl =
+          active.sl === undefined ? undefined : convertSlState(active.sl, from, to, newRounding);
+        await db.cycles.put({
+          ...active,
+          tms: convertedCycleTms,
+          units: to,
+          ...(convertedSl !== undefined ? { sl: convertedSl } : {}),
+        });
 
-        const cycleWorkouts = await db.workouts.where('cycleId').equals(active.id).toArray();
-        // Regenerate pending workouts per lift with the converted TM. Set
-        // weights round to the new unit's ROUNDING increment (not the per-lift
-        // TM bumps, which are progression-only).
-        for (const liftId of DAY_ORDER) {
-          const plan = applyTmOverridePlan(
-            cycleWorkouts,
-            liftId,
-            convertedCycleTms[liftId],
-            newRounding,
-          );
-          // Stamp the new unit onto each regenerated (pending) workout.
-          const regenerated = plan.regeneratedWorkouts.map((w) => ({ ...w, units: to }));
-          if (regenerated.length > 0) await db.workouts.bulkPut(regenerated);
+        // A StrongLifts block regenerates NOTHING. Its stamped rows are frozen
+        // history (they keep their own `units` and weights, like any completed
+        // 5/3/1 workout) and its pending rows have no sets to regenerate — the
+        // next start re-derives them from the converted `sl.lifts` above.
+        // applyTmOverridePlan would also be plain wrong here: it rebuilds sets
+        // from a TM percentage scheme StrongLifts does not use.
+        if (active.program !== 'sl5x5') {
+          const cycleWorkouts = await db.workouts.where('cycleId').equals(active.id).toArray();
+          // Regenerate pending workouts per lift with the converted TM. Set
+          // weights round to the new unit's ROUNDING increment (not the per-lift
+          // TM bumps, which are progression-only).
+          for (const liftId of DAY_ORDER) {
+            const plan = applyTmOverridePlan(
+              cycleWorkouts,
+              liftId,
+              convertedCycleTms[liftId],
+              newRounding,
+            );
+            // Stamp the new unit onto each regenerated (pending) workout.
+            const regenerated = plan.regeneratedWorkouts.map((w) => ({ ...w, units: to }));
+            if (regenerated.length > 0) await db.workouts.bulkPut(regenerated);
+          }
         }
       }
 
@@ -111,6 +127,40 @@ export async function switchUnits(to: Units): Promise<void> {
       });
     },
   );
+}
+
+/**
+ * Convert a StrongLifts runtime into the new unit: BOTH the working weight and
+ * the per-lift increment are converted and re-rounded to the new unit's rounding
+ * increment. A degenerate zero increment (a tiny value that rounds away) falls
+ * back to the unit default, exactly as accessory increments do — a zero
+ * increment would freeze the lift's progression forever. Fail streaks are a
+ * count, not a weight, and carry over untouched.
+ */
+function convertSlState(
+  sl: SlCycleState,
+  from: Units,
+  to: Units,
+  newRounding: number,
+): SlCycleState {
+  const convert = (rt: SlLiftRuntime): SlLiftRuntime => {
+    const increment = roundToIncrement(convertWeight(rt.increment, from, to), newRounding);
+    return {
+      weight: roundToIncrement(convertWeight(rt.weight, from, to), newRounding),
+      increment: increment > 0 ? increment : newRounding,
+      failStreak: rt.failStreak,
+    };
+  };
+  return {
+    keepPrs: sl.keepPrs,
+    lifts: {
+      squat: convert(sl.lifts.squat),
+      bench: convert(sl.lifts.bench),
+      row: convert(sl.lifts.row),
+      press: convert(sl.lifts.press),
+      deadlift: convert(sl.lifts.deadlift),
+    },
+  };
 }
 
 /** Exposed for tests/tools: the per-lift CycleLiftInput after a conversion. */

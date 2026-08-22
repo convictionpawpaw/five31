@@ -24,6 +24,12 @@ export async function applyTmOverride(liftId: LiftId, newTm: number): Promise<vo
       const settings = await requireSettings();
       const active = await db.cycles.where('status').equals('active').first();
       if (!active) throw new Error('No active cycle for TM override.');
+      // GUARD: during a StrongLifts block the TMs are DORMANT — the cycle's
+      // `tms` are a parked snapshot, its rows are driven by `sl.lifts`, and
+      // regenerating them from a TM would overwrite the 5×5 prescription.
+      if (active.program === 'sl5x5') {
+        throw new Error('Training Max overrides are unavailable during a StrongLifts block.');
+      }
 
       const fromValue = active.tms[liftId];
 

@@ -5,6 +5,7 @@ export * from './liftStateRepo.ts';
 export * from './onboardingRepo.ts';
 export * from './cycleRepo.ts';
 export * from './workoutRepo.ts';
+export * from './slRepo.ts';
 export * from './tmOverrideRepo.ts';
 export * from './accessoryRepo.ts';
 export * from './bodyweightRepo.ts';

@@ -38,11 +38,15 @@ function hasLoggedAccessoryReps(accessoryWork: readonly AccessoryWork[]): boolea
  * never wipes entered accessory data); otherwise (re)stamps fresh from live defs.
  */
 async function accessoryWorkForStart(w: Workout): Promise<AccessoryWork[]> {
+  // GUARD: a StrongLifts row NEVER carries accessory work. Without this, an SL
+  // squat/bench/press/deadlift row would inherit that lift's 5/3/1 day
+  // accessories — the leak the plan calls out. Checked on `program`, not on
+  // liftId, so it covers all five SL lifts and not merely the row.
+  if (w.program === 'sl5x5') return [];
   if (hasLoggedAccessoryReps(w.accessoryWork)) return w.accessoryWork;
   // Narrowing, not a guard: accessory DAYS are keyed by the four 5/3/1 lifts, so
-  // the row has none by construction. (The real "never stamp accessories on a
-  // StrongLifts row" guard is a separate concern — this branch is unreachable
-  // until StrongLifts rows exist.)
+  // a barbell-row day cannot exist. Unreachable given the guard above; it is
+  // what lets the compiler pass `w.liftId` as a LiftId.
   if (w.liftId === 'row') return [];
   return stampAccessoryWork(w.liftId);
 }
@@ -54,6 +58,12 @@ async function accessoryWorkForStart(w: Workout): Promise<AccessoryWork[]> {
 export async function startWorkout(id: string): Promise<void> {
   await db.transaction('rw', db.workouts, db.accessories, async () => {
     const w = await requireWorkout(id);
+    // GUARD: StrongLifts rows are started as a SESSION (all three at once, which
+    // is what stamps their lazy weights). Starting one alone would leave an
+    // in_progress row with no main sets at all.
+    if (w.program === 'sl5x5') {
+      throw new Error(`Workout ${id} is a StrongLifts row — start the session (startSlSession).`);
+    }
     if (w.status === 'in_progress') return;
     if (w.status !== 'pending') {
       throw new Error(`Cannot start workout ${id} from status '${w.status}'.`);
@@ -83,6 +93,13 @@ export async function logMainSet(
     const w = await requireWorkout(workoutId);
     if (w.status === 'completed' || w.status === 'skipped') {
       throw new Error(`Cannot log a main set on a ${w.status} workout (use editPastWorkout).`);
+    }
+    // GUARD: the pending → in_progress auto-start below is a 5/3/1 affordance.
+    // A pending StrongLifts row has NO main sets yet (weights are lazy), so
+    // there is nothing to log until the session has been started as a unit.
+    // An in_progress StrongLifts row logs completely normally.
+    if (w.status === 'pending' && w.program === 'sl5x5') {
+      throw new Error('Start the session first.');
     }
 
     const now = new Date().toISOString();
@@ -191,6 +208,11 @@ export async function finishWorkout(id: string): Promise<void> {
 export async function skipWorkout(id: string): Promise<void> {
   await db.transaction('rw', db.workouts, async () => {
     const w = await requireWorkout(id);
+    // GUARD: StrongLifts skip semantics are per-SESSION, not per-row — a
+    // half-skipped session would leave the block's progression undefined.
+    if (w.program === 'sl5x5') {
+      throw new Error(`Workout ${id} is a StrongLifts row — skip the session (skipSlSession).`);
+    }
     if (w.status === 'completed') throw new Error(`Cannot skip a completed workout ${id}.`);
     if (w.status === 'skipped') return;
     await db.workouts.put({ ...w, status: 'skipped' });
@@ -204,6 +226,12 @@ export async function skipWorkout(id: string): Promise<void> {
 export async function unskipWorkout(id: string): Promise<void> {
   await db.transaction('rw', db.workouts, db.cycles, async () => {
     const w = await requireWorkout(id);
+    // GUARD: the mirror of the skip guard — un-skipping one row of a StrongLifts
+    // session would resurrect it without the wipe-and-restamp the session-level
+    // function performs.
+    if (w.program === 'sl5x5') {
+      throw new Error(`Workout ${id} is a StrongLifts row — unskip the session (unskipSlSession).`);
+    }
     if (w.status !== 'skipped') {
       throw new Error(`Cannot unskip workout ${id}: status is '${w.status}'.`);
     }
