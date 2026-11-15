@@ -65,14 +65,23 @@ export async function seedDemoData(cycleCount: number): Promise<void> {
   if (!db.isOpen()) await db.open();
 
   // Everything — the wipe, the fresh init, and every played-out cycle — runs
-  // inside ONE parent transaction covering all 7 tables. The repo functions
+  // inside ONE parent transaction covering every table. The repo functions
   // below open their own 'rw' transactions on these same tables, which Dexie
   // NESTS into (joins) this parent, so all writes commit together. The live
   // useLiveQuery subscriptions on the triggering screen therefore never observe
   // an intermediate empty DB (which would bounce the user into onboarding).
   await db.transaction(
     'rw',
-    [db.settings, db.liftState, db.cycles, db.workouts, db.accessories, db.bodyweight, db.tmEvents],
+    [
+      db.settings,
+      db.liftState,
+      db.cycles,
+      db.workouts,
+      db.accessories,
+      db.bodyweight,
+      db.tmEvents,
+      db.stretchSessions,
+    ],
     async () => {
       // 1. Fresh DB. Clear every table (a full db.delete() would deadlock while
       //    live subscriptions hold the connection open — clearing does not).
@@ -84,6 +93,7 @@ export async function seedDemoData(cycleCount: number): Promise<void> {
         db.accessories.clear(),
         db.bodyweight.clear(),
         db.tmEvents.clear(),
+        db.stretchSessions.clear(),
       ]);
 
       // 2. Onboarding → Cycle 1 + accessories.

@@ -1,4 +1,4 @@
-import type { MainSet, WeekNumber } from './types.ts';
+import type { MainSet, Units, WeekNumber } from './types.ts';
 import { WARMUP, WEEK_SCHEMES, weekHasAmrap, weekHasWarmups } from './scheme.ts';
 import { roundToIncrement } from './rounding.ts';
 
@@ -44,4 +44,19 @@ export function buildMainSets(tm: number, week: WeekNumber, inc: number): MainSe
   });
 
   return sets;
+}
+
+/** A standard empty barbell: 45 lb / 20 kg. */
+export function barWeight(units: Units): number {
+  return units === 'lb' ? 45 : 20;
+}
+
+/**
+ * Whether a computed set weight is lighter than the empty bar. Purely a DISPLAY
+ * hint: {@link buildMainSets} deliberately does not floor at the bar (a low TM,
+ * e.g. a 60 lb press, yields 25/30/35 lb warmups), and changing frozen weights
+ * here would rewrite program math. The workout screen uses this to say so.
+ */
+export function isBelowBar(weight: number, units: Units): boolean {
+  return weight < barWeight(units);
 }

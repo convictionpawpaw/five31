@@ -46,19 +46,34 @@ const MONTHS = [
   'DEC',
 ] as const;
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Parse an ISO string for DISPLAY. A date-only string ('2026-07-01', the shape
+ * bodyweight entries are keyed by) is a LOCAL calendar date: `new Date()` would
+ * read it as UTC midnight, which is the previous evening anywhere west of UTC,
+ * so every bodyweight label rendered one day early. Full timestamps keep the
+ * standard parse (an instant, shown in local time).
+ */
+export function parseIsoForDisplay(iso: string): Date {
+  const m = DATE_ONLY.exec(iso);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(iso);
+}
+
 /**
  * Compact uppercase date from an ISO string/date, e.g. '2026-07-05' → 'JUL 5'.
  * Falls back to the raw first 10 chars if the string doesn't parse.
  */
 export function fmtShortDate(iso: string): string {
-  const d = new Date(iso);
+  const d = parseIsoForDisplay(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
 /** Month + year for a cycle header, e.g. '2026-07-05' → 'JUL 2026'. */
 export function fmtMonthYear(iso: string): string {
-  const d = new Date(iso);
+  const d = parseIsoForDisplay(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 7);
   return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }

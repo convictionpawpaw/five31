@@ -3,6 +3,7 @@ import type { LiftId } from '../../core/types.ts';
 import { applyTmOverridePlan } from '../../core/cycle.ts';
 import { db } from '../db.ts';
 import { requireSettings } from './settingsRepo.ts';
+import { assertValidTm } from './cycleRepo.ts';
 
 /**
  * Apply a mid-cycle Training Max override for a single lift, in ONE transaction:
@@ -11,8 +12,12 @@ import { requireSettings } from './settingsRepo.ts';
  *  - write a 'manual_override' TmEvent (from → to).
  *  - regenerate ONLY that lift's PENDING workouts (via core applyTmOverridePlan);
  *    completed / in_progress / skipped workouts keep their frozen weights.
+ * Rejects a `newTm` that is not a finite number > 0.
  */
 export async function applyTmOverride(liftId: LiftId, newTm: number): Promise<void> {
+  // Validate before opening the transaction: a NaN/0/negative TM would be
+  // written to LiftState and regenerate every pending set at a junk weight.
+  assertValidTm(newTm, liftId);
   await db.transaction(
     'rw',
     db.settings,

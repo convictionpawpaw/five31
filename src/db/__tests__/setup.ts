@@ -18,7 +18,25 @@ export async function resetDb(): Promise<void> {
     db.accessories.clear(),
     db.bodyweight.clear(),
     db.tmEvents.clear(),
+    db.stretchSessions.clear(),
   ]);
+}
+
+/**
+ * Mark one pending workout of the active cycle skipped, directly in the table.
+ * completeCycle / completeSlCycleContinue refuse a cycle with NO resolved
+ * workout (the empty-phantom guard), so suites that complete a freshly
+ * onboarded cycle resolve one row first. Returns the skipped workout's id.
+ */
+export async function resolveOneWorkout(): Promise<string> {
+  const active = await db.cycles.where('status').equals('active').first();
+  if (!active) throw new Error('test fixture: no active cycle');
+  const row = (await db.workouts.where('cycleId').equals(active.id).toArray()).find(
+    (w) => w.status === 'pending',
+  );
+  if (!row) throw new Error('test fixture: no pending workout to resolve');
+  await db.workouts.put({ ...row, status: 'skipped' });
+  return row.id;
 }
 
 /** A canonical lb onboarding payload used across tests (TMs chosen for clean vectors). */

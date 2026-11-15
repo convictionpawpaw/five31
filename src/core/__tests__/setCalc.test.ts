@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMainSets } from '../setCalc.ts';
+import { barWeight, buildMainSets, isBelowBar } from '../setCalc.ts';
 import type { MainSet } from '../types.ts';
 import {
   convertWeight,
@@ -100,5 +100,19 @@ describe('units', () => {
       squat: 5,
       deadlift: 5,
     });
+  });
+});
+
+describe('isBelowBar (display hint only — weights are never floored)', () => {
+  it('flags set weights lighter than a 45 lb / 20 kg bar', () => {
+    expect(barWeight('lb')).toBe(45);
+    expect(barWeight('kg')).toBe(20);
+    // A 60 lb press TM: warmups 25/30/35 lb are below the bar and stay as computed.
+    const sets = buildMainSets(60, 1, 5);
+    expect(sets.filter((s) => s.kind === 'warmup').map((s) => s.weight)).toEqual([25, 30, 35]);
+    expect(sets.map((s) => isBelowBar(s.weight, 'lb'))).toEqual([true, true, true, true, false, false]);
+    expect(isBelowBar(45, 'lb')).toBe(false);
+    expect(isBelowBar(17.5, 'kg')).toBe(true);
+    expect(isBelowBar(20, 'kg')).toBe(false);
   });
 });

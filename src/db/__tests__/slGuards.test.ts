@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetDb, lbOnboardingPayload } from './setup.ts';
+import { resetDb, lbOnboardingPayload, resolveOneWorkout } from './setup.ts';
 import { SL_WEIGHTS, seedSlBlock, sessionRow, sessionRows } from './slHelpers.ts';
 import { initializeFromOnboarding } from '../repo/onboardingRepo.ts';
 import {
@@ -91,6 +91,7 @@ describe('classic cycle mutations refuse a StrongLifts block', () => {
     expect(await getCycleWorkouts((await getActiveCycle())!.id)).toHaveLength(12);
     await applyTmOverride('squat', 305);
     expect((await getActiveCycle())!.tms.squat).toBe(305);
+    await resolveOneWorkout();
     const next = await completeCycle(FINAL_TMS);
     expect(next.number).toBe(2);
   });

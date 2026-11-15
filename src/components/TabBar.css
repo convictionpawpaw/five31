@@ -21,9 +21,27 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Six tabs on a 375px phone leave ~62px each: tighter tracking keeps
+ * 'PROGRESS' / 'SETTINGS' on one line. */
 .tabbar__label {
   color: inherit;
   font-size: 11px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* 320px phones (iPhone SE 1st gen, zoomed display) leave ~53px per tab:
+ * let tabs shrink below their label width and tighten the label so
+ * 'PROGRESS' / 'SETTINGS' still fit. 375px and up are unchanged. */
+@media (max-width: 359px) {
+  .tabbar__tab {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .tabbar__label {
+    font-size: 10px;
+    letter-spacing: 0.02em;
+  }
 }
 
 .tabbar__tab.is-active {

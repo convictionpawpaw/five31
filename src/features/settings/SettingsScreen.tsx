@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { BackupFile, Cycle, LiftId, Settings, Units } from '../../core/types.ts';
@@ -6,9 +6,9 @@ import { normalizeDayOrder } from '../../core/scheme.ts';
 import { roundingIncrementOptions } from '../../core/units.ts';
 import { db } from '../../db/db.ts';
 import {
-  exportBackup,
   importBackup,
   parseBackupJson,
+  stretchImportPlan,
   BackupValidationError,
 } from '../../db/exportImport.ts';
 import {
@@ -21,15 +21,22 @@ import {
   switchUnits,
   updateSettings,
 } from '../../db/repo/index.ts';
-import { shareBackup, defaultBackupFilename } from '../../pwa/share.ts';
+import { describeShareOutcome, type ShareOutcome } from '../../pwa/share.ts';
 import { getStorageEstimate } from '../../pwa/persistence.ts';
-import { seedDemoData } from '../../db/devSeed.ts';
 import { Button, HudPanel, Modal, NumberStepper, useToast } from '../../components/index.ts';
+import { BackupExportControl } from '../../components/ErrorScreen.tsx';
 import { LIFT_NAMES } from '../shared/liftLabels.ts';
 import { fmtWeight } from '../shared/format.ts';
 import { TmOverrideModal } from '../cycle/TmOverrideModal.tsx';
 import { deleteEverything } from './deleteEverything.ts';
 import './settings.css';
+
+/**
+ * The demo-data seeder wipes every table, so it must not exist in production.
+ * `import.meta.env.DEV` is a build-time constant: in a production build this is
+ * `null` and the dynamic import (the panel AND the seeder) is never emitted.
+ */
+const DevSeedPanel = import.meta.env.DEV ? lazy(() => import('./DevSeedPanel.tsx')) : null;
 
 /** App version — surfaced in the footer. */
 export const APP_VERSION = '1.0.0';
@@ -335,6 +342,12 @@ function ProgramSection({
             {pendingUnits.toUpperCase()} (re-rounded) and records a unit-conversion audit event.
             Historical workouts keep the units they were logged in.
           </p>
+          <p className="label text-mid settings__modal-copy">
+            It also resets weight rounding and the per-lift TM increments to the{' '}
+            {pendingUnits.toUpperCase()} defaults; set them again afterwards if you use others.
+            Switching straight back restores an unchanged training max exactly, but accessory and
+            5×5 working weights are re-rounded on every switch and can drift.
+          </p>
           <div className="settings__modal-actions">
             <Button variant="ghost" onClick={() => setPendingUnits(null)} disabled={busy}>
               Cancel
@@ -421,22 +434,11 @@ function DataSection({ toast }: { toast: ToastApi }) {
     [],
   );
 
-  const doExport = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const backup = await exportBackup();
-      const json = JSON.stringify(backup, null, 2);
-      const result = await shareBackup(json, defaultBackupFilename());
-      if (result === 'shared') toast.show('Backup shared', 'success');
-      else if (result === 'downloaded') toast.show('Backup downloaded', 'success');
-      else if (result === 'cancelled') toast.show('Export cancelled', 'info');
-      else toast.show('Sharing not supported here', 'danger');
-    } catch (err) {
-      toast.show(err instanceof Error ? err.message : 'Export failed', 'danger');
-    } finally {
-      setBusy(false);
-    }
+  // The export control reports inline; mirror the outcome as a toast. Copy
+  // comes from describeShareOutcome, which never claims an unconfirmed save.
+  const onExportResult = (outcome: ShareOutcome) => {
+    const { text, tone } = describeShareOutcome(outcome);
+    toast.show(text, tone);
   };
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -470,14 +472,19 @@ function DataSection({ toast }: { toast: ToastApi }) {
   };
 
   const summary = pending
-    ? `${pending.data?.cycles?.length ?? 0} cycles · ${pending.data?.workouts?.length ?? 0} workouts · ${pending.data?.accessories?.length ?? 0} accessories`
+    ? `${pending.data?.cycles?.length ?? 0} cycles · ${pending.data?.workouts?.length ?? 0} workouts · ${pending.data?.accessories?.length ?? 0} accessories · ${pending.data?.bodyweight?.length ?? 0} bodyweight entries`
     : '';
+  const stretchPlan = pending ? stretchImportPlan(pending) : null;
+  const stretchCopy =
+    stretchPlan === null
+      ? ''
+      : stretchPlan.mode === 'kept'
+        ? 'Stretch history: kept (this backup predates it).'
+        : `Stretch history: replaced with ${stretchPlan.count} session${stretchPlan.count === 1 ? '' : 's'}.`;
 
   return (
     <HudPanel title="Data" className="settings__section">
-      <Button variant="primary" block onClick={() => void doExport()} disabled={busy}>
-        Export Backup
-      </Button>
+      <BackupExportControl onResult={onExportResult} />
       <Button variant="ghost" block onClick={() => fileRef.current?.click()} disabled={busy}>
         Import Backup
       </Button>
@@ -504,9 +511,10 @@ function DataSection({ toast }: { toast: ToastApi }) {
       {pending && (
         <Modal open onClose={() => setPending(null)} title="Replace all data?">
           <p className="label text-mid settings__modal-copy">
-            This backup contains {summary}. Importing REPLACES ALL current data on this device. This
-            cannot be undone.
+            This backup contains {summary}. Importing REPLACES ALL current training data on this
+            device. This cannot be undone.
           </p>
+          <p className="label text-mid settings__modal-copy">{stretchCopy}</p>
           <div className="settings__modal-actions">
             <Button variant="ghost" onClick={() => setPending(null)} disabled={busy}>
               Cancel
@@ -531,11 +539,19 @@ function DangerSection() {
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const reset = async () => {
     if (confirmText !== 'RESET' || busy) return;
     setBusy(true);
-    await deleteEverything(); // reloads the page
+    setResetError(null);
+    try {
+      await deleteEverything(); // reloads the page on success
+    } catch (err) {
+      // Failed or blocked: say why and hand the controls back.
+      setResetError(err instanceof Error ? err.message : 'Reset failed.');
+      setBusy(false);
+    }
   };
 
   return (
@@ -549,14 +565,16 @@ function DangerSection() {
         <Modal
           open
           onClose={() => {
+            if (busy) return;
             setOpen(false);
             setConfirmText('');
+            setResetError(null);
           }}
           title="Full reset"
         >
           <p className="label text-mid settings__modal-copy">
-            This permanently deletes all cycles, workouts, accessories, and settings. Type{' '}
-            <span className="text-danger">RESET</span> to confirm.
+            This permanently deletes all cycles, workouts, accessories, bodyweight entries, stretch
+            sessions, and settings. Type <span className="text-danger">RESET</span> to confirm.
           </p>
           <input
             className="settings__reset-input"
@@ -565,12 +583,19 @@ function DangerSection() {
             onChange={(e) => setConfirmText(e.target.value)}
             aria-label="Type RESET to confirm"
           />
+          {busy && <p className="label text-mid settings__modal-copy">Erasing…</p>}
+          {resetError && (
+            <p role="alert" className="label text-danger settings__modal-copy">
+              {resetError}
+            </p>
+          )}
           <div className="settings__modal-actions">
             <Button
               variant="ghost"
               onClick={() => {
                 setOpen(false);
                 setConfirmText('');
+                setResetError(null);
               }}
               disabled={busy}
             >
@@ -591,7 +616,7 @@ function DangerSection() {
   );
 }
 
-// --- FOOTER (with hidden dev seed) -----------------------------------------
+// --- FOOTER (dev builds add a hidden seed panel) ----------------------------
 
 function Footer({
   settings,
@@ -602,70 +627,23 @@ function Footer({
   cycleCount: number;
   workoutCount: number;
 }) {
-  const toast = useToast();
-  const [showSeed, setShowSeed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const startHold = () => {
-    holdTimer.current = setTimeout(() => setShowSeed(true), 800);
-  };
-  const cancelHold = () => {
-    if (holdTimer.current) {
-      clearTimeout(holdTimer.current);
-      holdTimer.current = null;
-    }
-  };
-
-  const seed = async (n: number) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await seedDemoData(n);
-      toast.show(`Seeded ${n} cycles`, 'success');
-      // Reload so every screen re-reads the fresh DB cleanly. Force the hash to
-      // Today first so a reload can never boot into the onboarding wizard.
-      if (typeof location !== 'undefined') {
-        location.hash = '#/';
-        location.reload();
-      }
-    } catch (err) {
-      setBusy(false);
-      toast.show(err instanceof Error ? err.message : 'Seed failed', 'danger');
-    }
-  };
+  const version = (
+    <p className="label text-low settings__version">
+      FIVE31 v{APP_VERSION} · {cycleCount} cycles · {workoutCount} workouts · {settings.units.toUpperCase()}
+    </p>
+  );
 
   return (
     <footer className="settings__footer">
       <Link to="/accessories" className="settings__manage label">
         Manage Accessories →
       </Link>
-      <p
-        className="label text-low settings__version"
-        onPointerDown={startHold}
-        onPointerUp={cancelHold}
-        onPointerLeave={cancelHold}
-        onPointerCancel={cancelHold}
-      >
-        FIVE31 v{APP_VERSION} · {cycleCount} cycles · {workoutCount} workouts · {settings.units.toUpperCase()}
-      </p>
-
-      {showSeed && (
-        <div className="settings__seed">
-          <span className="label text-cyan">DEV: SEED DEMO DATA</span>
-          <div className="settings__seed-actions">
-            <Button variant="ghost" onClick={() => void seed(1)} disabled={busy}>
-              1
-            </Button>
-            <Button variant="ghost" onClick={() => void seed(3)} disabled={busy}>
-              3
-            </Button>
-            <Button variant="ghost" onClick={() => void seed(12)} disabled={busy}>
-              12
-            </Button>
-          </div>
-          <p className="label text-low settings__hint">Wipes and regenerates all data.</p>
-        </div>
+      {DevSeedPanel ? (
+        <Suspense fallback={version}>
+          <DevSeedPanel>{version}</DevSeedPanel>
+        </Suspense>
+      ) : (
+        version
       )}
     </footer>
   );

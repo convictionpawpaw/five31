@@ -41,6 +41,7 @@ import {
   slStreakPips,
 } from '../sl/slView.ts';
 import '../sl/sl.css';
+import { invalidTmLifts, TM_REQUIRED_COPY } from './tmValidation.ts';
 
 /** Find the completed AMRAP week that fell short, for the HOLD reason copy. */
 function missedWeekLabel(workouts: readonly Workout[], liftId: LiftId): string | null {
@@ -216,6 +217,9 @@ function ClassicCompleteModal({
   // WHICH lift, and would have scrolled past the one that needs the fix.
   const blockingLifts = slSetupBlockingLifts(slWeights);
   const slSetupBlocked = blockingLifts.length > 0;
+  // Same rule for the Continue path: a TM must be a finite number above zero.
+  const badTmLifts = invalidTmLifts(tms, order);
+  const tmsBlocked = badTmLifts.length > 0;
 
   const confirm = async () => {
     if (busy) return;
@@ -228,14 +232,23 @@ function ClassicCompleteModal({
           return;
         }
         // completeCycleToSl consumes the armed switch itself, inside its txn.
-        await completeCycleToSl({ weights: slWeights, increments: slIncrements, keepPrs });
+        await completeCycleToSl({
+          weights: slWeights,
+          increments: slIncrements,
+          keepPrs,
+          expectedCycleId: cycle.id,
+        });
         onDone();
         toast.show('StrongLifts 5×5 block started', 'success');
         return;
       }
+      if (tmsBlocked) {
+        setBusy(false);
+        return;
+      }
       // The user declined an armed switch (or there was none): disarm, then advance.
       await disarmIfArmed(settings);
-      await completeCycle(tms);
+      await completeCycle(tms, cycle.id);
       onDone();
       toast.show(`Cycle ${cycleTag(cycle.number + 1)} initialized`, 'success');
     } catch (err) {
@@ -285,7 +298,7 @@ function ClassicCompleteModal({
                     value={tms[liftId]}
                     onChange={(v) => setTm(liftId, v)}
                     step={tmStep}
-                    min={0}
+                    min={tmStep}
                     suffix={settings.units.toUpperCase()}
                     label={`${LIFT_NAMES[liftId]} new TM`}
                   />
@@ -293,6 +306,9 @@ function ClassicCompleteModal({
                     Reset to 90%
                   </Button>
                 </div>
+                {badTmLifts.includes(liftId) && (
+                  <p className="ccmodal__copy text-danger">{TM_REQUIRED_COPY}</p>
+                )}
               </div>
             );
           })
@@ -353,7 +369,7 @@ function ClassicCompleteModal({
             variant="primary"
             block
             onClick={confirm}
-            disabled={busy || (choice === 'sl5x5' && slSetupBlocked)}
+            disabled={busy || (choice === 'sl5x5' ? slSetupBlocked : tmsBlocked)}
           >
             {choice === 'sl5x5' ? 'Start 5×5 Block' : 'Confirm'}
           </Button>
@@ -408,14 +424,24 @@ function SlCompleteModal({
   });
 
   const tmStep = settings.units === 'kg' ? 1.25 : 2.5;
+  const badTmLifts = invalidTmLifts(
+    tms,
+    suggestions.map((s) => s.liftId),
+  );
+  const returnBlocked = badTmLifts.length > 0;
 
   const confirm = async () => {
     if (busy) return;
     setBusy(true);
     try {
       if (choice === 'return') {
+        // Defence in depth; the button is disabled while this holds.
+        if (returnBlocked) {
+          setBusy(false);
+          return;
+        }
         // completeSlCycleReturn consumes the armed switch inside its txn.
-        await completeSlCycleReturn(tms, keepPrs);
+        await completeSlCycleReturn(tms, keepPrs, cycle.id);
         onDone();
         toast.show('Back on 5/3/1 — training maxes are live again', 'success');
         return;
@@ -423,7 +449,7 @@ function SlCompleteModal({
       // CONTINUE declines any armed switch. completeSlCycleContinue deliberately
       // leaves Settings untouched, so the disarm has to happen here.
       await disarmIfArmed(settings);
-      await completeSlCycleContinue();
+      await completeSlCycleContinue(cycle.id);
       onDone();
       toast.show('Next 5×5 block started', 'success');
     } catch (err) {
@@ -497,11 +523,14 @@ function SlCompleteModal({
                     value={tms[s.liftId]}
                     onChange={(v) => setTms((p) => ({ ...p, [s.liftId]: v }))}
                     step={tmStep}
-                    min={0}
+                    min={tmStep}
                     suffix={settings.units.toUpperCase()}
                     label={`${LIFT_NAMES[s.liftId]} returning TM`}
                   />
                 </div>
+                {badTmLifts.includes(s.liftId) && (
+                  <p className="ccmodal__copy text-danger">{TM_REQUIRED_COPY}</p>
+                )}
               </div>
             ))}
             <KeepPrsToggle on={keepPrs} onToggle={() => setKeepPrs((k) => !k)} />
@@ -512,7 +541,12 @@ function SlCompleteModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" block onClick={confirm} disabled={busy}>
+          <Button
+            variant="primary"
+            block
+            onClick={confirm}
+            disabled={busy || (choice === 'return' && returnBlocked)}
+          >
             {/* Deliberately NOT the segment's wording: two controls labelled
                 'Return to 5/3/1' in one dialog is a mis-tap waiting to happen. */}
             {choice === 'return' ? 'Confirm Return' : 'Start Next Block'}

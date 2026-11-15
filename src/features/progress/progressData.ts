@@ -225,21 +225,29 @@ export function buildAccessorySeries(
   return { points, latest };
 }
 
-/** Last-N session weights (raw, chronological) for an accessory sparkline. */
+/**
+ * Last-N session weights (chronological) for an accessory sparkline, each
+ * converted from its workout's own units into `targetUnits` — the same
+ * conversion {@link buildAccessorySeries} applies, so a mid-history unit switch
+ * never draws 100 lb next to 45 kg on one line.
+ */
 export function accessorySparklineValues(
   workouts: readonly Workout[],
   accessoryId: string,
+  targetUnits: Units,
   n = 6,
 ): number[] {
-  const rows: { key: string; weight: number }[] = [];
+  const rows: { key: string; weight: number; units: Units }[] = [];
   for (const w of workouts) {
     if (w.status !== 'completed') continue;
     for (const a of w.accessoryWork) {
-      if (a.accessoryId === accessoryId) rows.push({ key: completedKey(w), weight: a.weight });
+      if (a.accessoryId === accessoryId) {
+        rows.push({ key: completedKey(w), weight: a.weight, units: w.units });
+      }
     }
   }
   rows.sort((a, b) => a.key.localeCompare(b.key));
-  return rows.slice(-n).map((r) => r.weight);
+  return rows.slice(-n).map((r) => convertWeight(r.weight, r.units, targetUnits));
 }
 
 /** The bodyweight line series + latest value. */

@@ -1,3 +1,5 @@
+import type { StretchSession } from './stretch/types.ts';
+
 export type LiftId = 'press' | 'deadlift' | 'bench' | 'squat';
 export type Units = 'lb' | 'kg';
 export type WeekNumber = 1 | 2 | 3 | 4; // 4 = deload
@@ -181,5 +183,10 @@ export interface BackupFile {
     accessories: AccessoryDef[];
     bodyweight: BodyweightEntry[];
     tmEvents: TmEvent[];
+    /**
+     * Stretch sessions (schemaVersion 2+). Absent in v1 files; the v1 -> v2
+     * migration adds it as [], and every v2 export carries it.
+     */
+    stretchSessions?: StretchSession[];
   };
 }

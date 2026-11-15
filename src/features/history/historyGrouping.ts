@@ -30,6 +30,49 @@ function completedKey(w: Workout): string {
   return w.completedAt ?? w.id;
 }
 
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+
+/**
+ * The creation instant encoded in a ULID (its first 10 Crockford base-32
+ * characters are milliseconds since the epoch), as an ISO string so it compares
+ * directly against `completedAt` / `startedAt`. Null for anything that is not a
+ * well-formed ULID (test ids, imported oddities).
+ */
+export function ulidTimeIso(id: string): string | null {
+  if (!ULID_RE.test(id)) return null;
+  let ms = 0;
+  for (const ch of id.slice(0, 10).toUpperCase()) {
+    ms = ms * 32 + CROCKFORD.indexOf(ch);
+  }
+  if (!Number.isFinite(ms) || ms > 8.64e15) return null;
+  return new Date(ms).toISOString();
+}
+
+/**
+ * The real timestamp a history row can be dated by: completedAt, else startedAt
+ * (a workout started and then skipped). NULL for a workout skipped before it
+ * was ever started — it has no date of its own, and its ULID id is NOT one to
+ * display (it reads as '01J9ZK3QWE' through the date formatter's fallback).
+ */
+export function historyRowDate(w: Workout): string | null {
+  return w.completedAt ?? w.startedAt ?? null;
+}
+
+/**
+ * Sort key for a row in the history list, comparable as ISO strings:
+ * the row's own date when it has one, else its creation time decoded from the
+ * ULID. Every 5/3/1 workout is created in bulk when its cycle starts, so a
+ * never-started skip decodes to the cycle's start: earlier than anything that
+ * was actually trained in that cycle, i.e. it lands LAST in the newest-first
+ * list. That is deliberate — the skip has no time of its own to place it by,
+ * and the previous behaviour (comparing the raw ULID against ISO strings) only
+ * landed there by accident of '0' < '2'. An id that is not a ULID sorts last.
+ */
+function historySortKey(w: Workout): string {
+  return historyRowDate(w) ?? ulidTimeIso(w.id) ?? '';
+}
+
 /**
  * Compute, for every COMPLETED workout of a lift, whether its PR EFFORT was a
  * record — evaluated across the whole (cross-cycle) history of that lift, in
@@ -84,9 +127,10 @@ export function computePrWorkoutIds(
  *
  *  - Only cycles that HAVE at least one resolved workout appear.
  *  - Groups are ordered by cycle number DESCENDING (newest first).
- *  - Within a group, rows are ordered by completion recency descending
- *    (completedAt, falling back to id); skipped workouts (no completedAt) sort
- *    by id, landing after same-keyed completed ones.
+ *  - Within a group, rows are ordered newest first by their own date
+ *    (completedAt, else startedAt); a workout skipped before it was ever
+ *    started has neither and sorts by its ULID creation time, which places it
+ *    after everything trained in that cycle (see historySortKey).
  *  - Each row carries an `isPr` flag from the cross-cycle PR timeline.
  */
 export function groupHistoryByCycle(
@@ -110,7 +154,12 @@ export function groupHistoryByCycle(
   for (const cycle of cyclesByNumberDesc) {
     const list = byCycle.get(cycle.id);
     if (!list || list.length === 0) continue;
-    list.sort((a, b) => completedKey(b).localeCompare(completedKey(a)));
+    // Newest first by the row's own date (see historySortKey); ties fall back
+    // to the id, newest first, so the order is deterministic.
+    list.sort(
+      (a, b) =>
+        historySortKey(b).localeCompare(historySortKey(a)) || b.id.localeCompare(a.id),
+    );
     groups.push({
       cycle,
       rows: list.map((workout) => ({ workout, isPr: prIds.has(workout.id) })),

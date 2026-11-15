@@ -14,6 +14,18 @@ async function requireWorkout(id: string): Promise<Workout> {
 }
 
 /**
+ * Refuse to start or live-log a workout whose cycle is not the active one. A
+ * workout in a completed cycle is history (editPastWorkout is the only edit
+ * path); starting it would re-open a closed cycle's row behind its back.
+ */
+async function assertCycleActive(w: Workout): Promise<void> {
+  const cycle = await db.cycles.get(w.cycleId);
+  if (!cycle || cycle.status !== 'active') {
+    throw new Error(`Workout ${w.id} belongs to a cycle that is not active.`);
+  }
+}
+
+/**
  * Stamp this workout's accessory snapshots from the day's active (non-archived)
  * AccessoryDefs in `order`, using each def's CURRENT weight (lazy stamping, so
  * earlier-in-cycle accessory progression is reflected). Idempotent-ish: only
@@ -54,9 +66,14 @@ async function accessoryWorkForStart(w: Workout): Promise<AccessoryWork[]> {
 /**
  * Transition a pending workout to in_progress: stamp startedAt and materialize
  * accessoryWork from the day's active AccessoryDefs. No-op if already started.
+ * Rejects a workout whose cycle is not the active cycle.
+ *
+ * Deliberately NOT refused: starting while another workout is in progress. The
+ * cycle grid opens any workout and WorkoutScreen starts it on first logging
+ * interaction, so the UI legitimately leaves several rows in progress.
  */
 export async function startWorkout(id: string): Promise<void> {
-  await db.transaction('rw', db.workouts, db.accessories, async () => {
+  await db.transaction('rw', db.workouts, db.accessories, db.cycles, async () => {
     const w = await requireWorkout(id);
     // GUARD: StrongLifts rows are started as a SESSION (all three at once, which
     // is what stamps their lazy weights). Starting one alone would leave an
@@ -68,6 +85,7 @@ export async function startWorkout(id: string): Promise<void> {
     if (w.status !== 'pending') {
       throw new Error(`Cannot start workout ${id} from status '${w.status}'.`);
     }
+    await assertCycleActive(w);
     const accessoryWork = await accessoryWorkForStart(w);
     await db.workouts.put({
       ...w,
@@ -81,7 +99,8 @@ export async function startWorkout(id: string): Promise<void> {
 /**
  * Write-through log of a main-set actualReps. The first log on a still-pending
  * workout also starts it (stamps startedAt + accessoryWork). `kind`/`index`
- * identify the set within its kind-scoped list.
+ * identify the set within its kind-scoped list. Rejects a workout whose cycle
+ * is not the active cycle.
  */
 export async function logMainSet(
   workoutId: string,
@@ -89,11 +108,12 @@ export async function logMainSet(
   index: number,
   actualReps: number,
 ): Promise<void> {
-  await db.transaction('rw', db.workouts, db.accessories, async () => {
+  await db.transaction('rw', db.workouts, db.accessories, db.cycles, async () => {
     const w = await requireWorkout(workoutId);
     if (w.status === 'completed' || w.status === 'skipped') {
       throw new Error(`Cannot log a main set on a ${w.status} workout (use editPastWorkout).`);
     }
+    await assertCycleActive(w);
     // GUARD: the pending → in_progress auto-start below is a 5/3/1 affordance.
     // A pending StrongLifts row has NO main sets yet (weights are lazy), so
     // there is nothing to log until the session has been started as a unit.

@@ -24,6 +24,14 @@ function lastReset(resets: readonly string[]): string | null {
 }
 
 /**
+ * The toast text for a failed write: the repo's own message when it threw an
+ * Error (repo guards explain themselves), else the caller's fallback.
+ */
+export function writeErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message.length > 0 ? err.message : fallback;
+}
+
+/**
  * Count main WORK sets and accessory sets that have not been logged yet.
  * Warmups don't count (they are optional). Used to gate the "N sets unlogged"
  * finish confirmation.

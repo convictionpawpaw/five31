@@ -40,6 +40,22 @@ describe('buildGrid', () => {
     expect(grid[0]!.cells[0]!.topWeight).toBe(170); // last work set weight
   });
 
+  it("labels each cell with its workout row's OWN units, not the settings unit", () => {
+    // Mid-cycle lb → kg switch: the completed week-1 press keeps lb + 255; the
+    // regenerated pending rows are kg.
+    const c = fullCycle().map((w) =>
+      w.week === 1 && w.liftId === 'press'
+        ? { ...mk(1, 'press', 'completed'), mainSets: [work(0, 195), work(1, 225), work(2, 255)] }
+        : { ...w, units: 'kg' as const, mainSets: [work(0, 60), work(1, 70), work(2, 77.5)] },
+    );
+    const grid = buildGrid(c);
+    const press1 = grid[0]!.cells.find((cell) => cell.liftId === 'press')!;
+    expect(press1.topWeight).toBe(255);
+    expect(press1.units).toBe('lb');
+    const bench1 = grid[0]!.cells.find((cell) => cell.liftId === 'bench')!;
+    expect(bench1.units).toBe('kg');
+  });
+
   it('adds the deload row when present, sorted last', () => {
     const grid = buildGrid(fullCycle(true));
     expect(grid.map((r) => r.week)).toEqual([1, 2, 3, 4]);

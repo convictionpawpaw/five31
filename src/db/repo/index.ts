@@ -11,3 +11,4 @@ export * from './accessoryRepo.ts';
 export * from './bodyweightRepo.ts';
 export * from './tmEventRepo.ts';
 export * from './unitsRepo.ts';
+export * from './stretchRepo.ts';

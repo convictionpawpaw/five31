@@ -17,7 +17,7 @@ beforeEach(resetDb);
 
 /** Read every table into a plain object for deep comparison. */
 async function snapshotAllTables() {
-  const [settings, liftState, cycles, workouts, accessories, bodyweight, tmEvents] =
+  const [settings, liftState, cycles, workouts, accessories, bodyweight, tmEvents, stretchSessions] =
     await Promise.all([
       db.settings.toArray(),
       db.liftState.toArray(),
@@ -26,6 +26,7 @@ async function snapshotAllTables() {
       db.accessories.toArray(),
       db.bodyweight.toArray(),
       db.tmEvents.toArray(),
+      db.stretchSessions.toArray(),
     ]);
   const sortById = <T extends { id?: string; liftId?: string }>(rows: T[]) =>
     [...rows].sort((a, b) => String(a.id ?? a.liftId).localeCompare(String(b.id ?? b.liftId)));
@@ -37,6 +38,7 @@ async function snapshotAllTables() {
     accessories: sortById(accessories),
     bodyweight: sortById(bodyweight),
     tmEvents: sortById(tmEvents),
+    stretchSessions: sortById(stretchSessions),
   };
 }
 
@@ -75,13 +77,22 @@ describe('export / import', () => {
     expect(after).toEqual(before);
   });
 
-  it('export includes all 7 tables with the app + schemaVersion header', async () => {
+  it('export includes all 8 tables with the app + schemaVersion header', async () => {
     await seedRichState();
     const backup = await exportBackup();
     expect(backup.app).toBe('five31');
-    expect(backup.schemaVersion).toBe(1);
+    expect(backup.schemaVersion).toBe(2);
     expect(Object.keys(backup.data).sort()).toEqual(
-      ['accessories', 'bodyweight', 'cycles', 'liftState', 'settings', 'tmEvents', 'workouts'].sort(),
+      [
+        'accessories',
+        'bodyweight',
+        'cycles',
+        'liftState',
+        'settings',
+        'stretchSessions',
+        'tmEvents',
+        'workouts',
+      ].sort(),
     );
     expect(backup.data.settings).toHaveLength(1);
     expect(backup.data.workouts.length).toBeGreaterThan(0);

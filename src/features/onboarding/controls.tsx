@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { sanitizeDecimalInput } from './decimalInput.ts';
 import './onboarding.css';
 
 /** The controlled-text display for a numeric value (0 shows as empty). */
@@ -61,7 +62,8 @@ export function DecimalField({
             focused.current = true;
           }}
           onChange={(e) => {
-            const raw = e.target.value.replace(/[^0-9.]/g, '');
+            // '82,5' (comma-decimal locale) is 82.5, not 825.
+            const raw = sanitizeDecimalInput(e.target.value);
             setText(raw);
             onChange(parseField(raw));
           }}

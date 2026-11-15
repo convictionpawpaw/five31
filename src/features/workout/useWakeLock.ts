@@ -5,6 +5,10 @@ import { useEffect, useRef } from 'react';
  * phone screen doesn't sleep mid-workout. Re-acquires when the tab returns to
  * the foreground (the OS drops the lock on visibility change), and releases on
  * unmount / when `active` goes false. Silently no-ops where the API is missing.
+ *
+ * At most one sentinel is ever held: a request already in flight is never
+ * duplicated (a visibilitychange during it is re-checked once it settles), and
+ * a sentinel that resolves after the effect was torn down is released at once.
  */
 export function useWakeLock(active: boolean): void {
   const sentinelRef = useRef<WakeLockSentinel | null>(null);
@@ -15,33 +19,51 @@ export function useWakeLock(active: boolean): void {
     if (!nav.wakeLock) return;
 
     let cancelled = false;
+    let pending = false;
+    let recheck = false;
+
+    const holding = (): boolean => {
+      const held = sentinelRef.current;
+      return held !== null && !held.released;
+    };
 
     const acquire = async (): Promise<void> => {
+      if (cancelled) return;
+      if (pending) {
+        // A request is in flight; look again once it settles.
+        recheck = true;
+        return;
+      }
+      if (holding()) return;
+      sentinelRef.current = null;
+      pending = true;
       try {
         const sentinel = await nav.wakeLock!.request('screen');
-        if (cancelled) {
+        if (cancelled || holding()) {
           void sentinel.release();
-          return;
+        } else {
+          // The OS auto-releases the sentinel when the tab is backgrounded.
+          // Listen for that so we null our ref and can re-acquire on visible.
+          sentinel.addEventListener('release', () => {
+            if (sentinelRef.current === sentinel) sentinelRef.current = null;
+          });
+          sentinelRef.current = sentinel;
         }
-        // The OS auto-releases the sentinel when the tab is backgrounded. Listen
-        // for that so we null our ref and can re-acquire on the next visible.
-        sentinel.addEventListener('release', () => {
-          if (sentinelRef.current === sentinel) sentinelRef.current = null;
-        });
-        sentinelRef.current = sentinel;
       } catch {
         // Denied (low battery, permissions, unsupported) — silently no-op.
+      } finally {
+        pending = false;
+      }
+      if (recheck && !cancelled) {
+        recheck = false;
+        onVisibility();
       }
     };
 
     const onVisibility = (): void => {
       // Re-acquire whenever we're visible and hold no live sentinel — either the
       // ref is null, or it points at an already-released (stale) sentinel.
-      const held = sentinelRef.current;
-      if (document.visibilityState === 'visible' && (held === null || held.released)) {
-        sentinelRef.current = null;
-        void acquire();
-      }
+      if (document.visibilityState === 'visible' && !holding()) void acquire();
     };
 
     void acquire();
@@ -52,7 +74,7 @@ export function useWakeLock(active: boolean): void {
       document.removeEventListener('visibilitychange', onVisibility);
       const s = sentinelRef.current;
       sentinelRef.current = null;
-      if (s) void s.release();
+      if (s && !s.released) void s.release();
     };
   }, [active]);
 }

@@ -266,8 +266,8 @@ function AccessoryCard({
   onMove: (dir: -1 | 1) => void;
 }) {
   const spark = useMemo(
-    () => accessorySparklineValues(workouts, accessory.id, 6),
-    [workouts, accessory.id],
+    () => accessorySparklineValues(workouts, accessory.id, units, 6),
+    [workouts, accessory.id, units],
   );
 
   return (

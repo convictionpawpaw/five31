@@ -5,6 +5,7 @@ import type { AccessoryWork, MainSet, Settings, Workout } from '../../core/types
 import { epley } from '../../core/e1rm.ts';
 import { amrapTargetForPr } from '../../core/prs.ts';
 import { buildAccessoryWork } from '../../core/accessories.ts';
+import { isBelowBar } from '../../core/setCalc.ts';
 import { db } from '../../db/db.ts';
 import {
   finishWorkout,
@@ -20,7 +21,7 @@ import { Button, HudPanel, Modal, NumberStepper, useToast } from '../../componen
 import { cycleTag, LIFT_NAMES, weekLabel } from '../shared/liftLabels.ts';
 import { fmtTargetReps, fmtWeight } from '../shared/format.ts';
 import { amrapSet } from '../shared/workoutSelect.ts';
-import { bestE1rmForLift, countUnloggedSets } from './workoutHelpers.ts';
+import { bestE1rmForLift, countUnloggedSets, writeErrorMessage } from './workoutHelpers.ts';
 import { useWakeLock } from './useWakeLock.ts';
 import './workout.css';
 
@@ -113,8 +114,12 @@ export function WorkoutScreen() {
           workout={workout}
           cycleActive={data.cycleActive}
           onUnskip={async () => {
-            await unskipWorkout(workout.id);
-            toast.show('Workout un-skipped', 'info');
+            try {
+              await unskipWorkout(workout.id);
+              toast.show('Workout un-skipped', 'info');
+            } catch (err) {
+              toast.show(writeErrorMessage(err, 'Could not un-skip the workout'), 'danger');
+            }
           }}
         />
       ) : (
@@ -171,6 +176,7 @@ function ActiveBody({
   onFinished: (msg: string) => void;
   onSkipped: () => void;
 }) {
+  const toast = useToast();
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [confirmSkip, setConfirmSkip] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -215,8 +221,10 @@ function ActiveBody({
       }
       onFinished(msg);
     } catch (err) {
+      // Caught here, not rethrown: these run inside `void` calls, where a
+      // rethrow is an unhandled rejection the user never sees.
       setBusy(false);
-      throw err;
+      toast.show(writeErrorMessage(err, 'Could not finish the workout'), 'danger');
     }
   };
 
@@ -236,7 +244,7 @@ function ActiveBody({
       onSkipped();
     } catch (err) {
       setBusy(false);
-      throw err;
+      toast.show(writeErrorMessage(err, 'Could not skip the workout'), 'danger');
     }
   };
 
@@ -350,14 +358,19 @@ function allSetsHitMax(a: AccessoryWork): boolean {
 // ---------------------------------------------------------------------------
 
 function WarmupGroup({ workout, warmups }: { workout: Workout; warmups: MainSet[] }) {
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const loggedCount = warmups.filter((s) => s.actualReps !== undefined).length;
 
   const logAll = async () => {
-    for (const s of warmups) {
-      if (s.actualReps === undefined) {
-        await logMainSet(workout.id, 'warmup', s.index, s.targetReps);
+    try {
+      for (const s of warmups) {
+        if (s.actualReps === undefined) {
+          await logMainSet(workout.id, 'warmup', s.index, s.targetReps);
+        }
       }
+    } catch (err) {
+      toast.show(writeErrorMessage(err, 'Could not log the warmups'), 'danger');
     }
   };
 
@@ -393,13 +406,22 @@ function WarmupGroup({ workout, warmups }: { workout: Workout; warmups: MainSet[
 // ---------------------------------------------------------------------------
 
 function WorkSetRow({ workout, set }: { workout: Workout; set: MainSet }) {
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const logged = set.actualReps !== undefined;
   const [reps, setReps] = useState<number>(set.actualReps ?? set.targetReps);
 
+  const log = async (next: number) => {
+    try {
+      await logMainSet(workout.id, set.kind, set.index, next);
+    } catch (err) {
+      toast.show(writeErrorMessage(err, 'Could not log the set'), 'danger');
+    }
+  };
+
   const onTap = () => {
     if (!logged) {
-      void logMainSet(workout.id, set.kind, set.index, set.targetReps);
+      void log(set.targetReps);
     } else {
       setReps(set.actualReps ?? set.targetReps);
       setEditing((e) => !e);
@@ -408,7 +430,7 @@ function WorkSetRow({ workout, set }: { workout: Workout; set: MainSet }) {
 
   const commit = (next: number) => {
     setReps(next);
-    void logMainSet(workout.id, set.kind, set.index, next);
+    void log(next);
   };
 
   return (
@@ -420,7 +442,10 @@ function WorkSetRow({ workout, set }: { workout: Workout; set: MainSet }) {
         <span className="num setrow__reps">
           {logged ? set.actualReps : fmtTargetReps(set.targetReps, set.amrap)}
         </span>
-        {logged && <span className="label setrow__target">/ {set.targetReps}</span>}
+        {logged && (
+          <span className="label setrow__target">/ {fmtTargetReps(set.targetReps, set.amrap)}</span>
+        )}
+        {isBelowBar(set.weight, workout.units) && <BelowBarHint />}
       </button>
       {editing && logged && (
         <div className="setrow__editor">
@@ -454,11 +479,16 @@ function AmrapRow({
     [liftWorkouts, workout.liftId, workout.units, workout.id, prResets],
   );
 
+  const toast = useToast();
   const e1 = epley(set.weight, reps);
   const prTarget = amrapTargetForPr(set.weight, bestE1rm);
 
-  const commit = () => {
-    void logMainSet(workout.id, 'work', set.index, reps);
+  const commit = async () => {
+    try {
+      await logMainSet(workout.id, 'work', set.index, reps);
+    } catch (err) {
+      toast.show(writeErrorMessage(err, 'Could not log the AMRAP set'), 'danger');
+    }
   };
 
   return (
@@ -470,6 +500,7 @@ function AmrapRow({
           <span className="label text-mid">
             {workout.units.toUpperCase()} × {fmtTargetReps(set.targetReps, true)}
           </span>
+          {isBelowBar(set.weight, workout.units) && <BelowBarHint />}
         </span>
       </div>
 
@@ -489,7 +520,7 @@ function AmrapRow({
         )}
       </div>
 
-      <Button variant="primary" block onClick={commit}>
+      <Button variant="primary" block onClick={() => void commit()}>
         {logged ? `Update — ${reps} reps` : `Log — ${reps} reps`}
       </Button>
     </div>
@@ -514,6 +545,7 @@ function AccessoryRow({
   preview: boolean;
   ensureStarted: () => Promise<void>;
 }) {
+  const toast = useToast();
   const [editing, setEditing] = useState<number | null>(null);
   const willProgress = allSetsHitMax(accessory);
 
@@ -544,10 +576,15 @@ function AccessoryRow({
       </div>
       {editing !== null && !preview && (
         <div className="accrow__editor">
+          {/* One editor is repointed between sets: key it per set so a hold
+              on one set can never keep counting on the next. */}
           <NumberStepper
+            key={`${accessory.accessoryId}-${editing}`}
             value={accessory.setReps[editing] ?? accessory.repRangeMax}
             onChange={(next) => {
-              void logAccessorySet(workout.id, accessoryIndex, editing, next);
+              logAccessorySet(workout.id, accessoryIndex, editing, next).catch((err: unknown) => {
+                toast.show(writeErrorMessage(err, 'Could not log the set'), 'danger');
+              });
             }}
             step={1}
             min={0}
@@ -581,19 +618,24 @@ function AccessoryChip({
   ensureStarted: () => Promise<void>;
   onEdit: () => void;
 }) {
+  const toast = useToast();
   const logged = reps !== null;
   const onTap = async () => {
-    if (preview) {
-      // First interaction on a pending workout starts it; the live query then
-      // re-renders with the real accessoryWork snapshot to log against.
-      await ensureStarted();
-      return;
-    }
-    if (!logged) {
-      // First tap logs top-of-range reps.
-      await logAccessorySet(workout.id, accessoryIndex, setIndex, accessory.repRangeMax);
-    } else {
-      onEdit();
+    try {
+      if (preview) {
+        // First interaction on a pending workout starts it; the live query then
+        // re-renders with the real accessoryWork snapshot to log against.
+        await ensureStarted();
+        return;
+      }
+      if (!logged) {
+        // First tap logs top-of-range reps.
+        await logAccessorySet(workout.id, accessoryIndex, setIndex, accessory.repRangeMax);
+      } else {
+        onEdit();
+      }
+    } catch (err) {
+      toast.show(writeErrorMessage(err, 'Could not log the set'), 'danger');
     }
   };
   return (
@@ -619,6 +661,7 @@ function NotesField({
   workout: Workout;
   ensureStarted: () => Promise<void>;
 }) {
+  const toast = useToast();
   const [open, setOpen] = useState((workout.notes ?? '').length > 0);
   const [text, setText] = useState(workout.notes ?? '');
 
@@ -627,8 +670,12 @@ function NotesField({
     // never write a note to a workout that was only viewed. Skip the write when
     // there is nothing to save on a still-pending workout.
     if (workout.status === 'pending' && text.trim().length === 0) return;
-    await ensureStarted();
-    await setNotes(workout.id, text);
+    try {
+      await ensureStarted();
+      await setNotes(workout.id, text);
+    } catch (err) {
+      toast.show(writeErrorMessage(err, 'Could not save the note'), 'danger');
+    }
   };
 
   return (
@@ -684,10 +731,11 @@ function ReadOnlyBody({
                 <span className="num">{fmtWeight(s.weight)}</span>
                 <span className="label text-mid">{workout.units.toUpperCase()}</span>
                 <span className="label text-low">×</span>
-                <span className="num">
-                  {s.actualReps ?? '—'}
-                  {s.amrap ? '+' : ''}
-                </span>
+                {/* Achieved reps are a plain count; the '+' marks the TARGET. */}
+                <span className="num">{s.actualReps ?? '—'}</span>
+                {s.amrap && (
+                  <span className="label text-low">/ {fmtTargetReps(s.targetReps, true)}</span>
+                )}
               </div>
             ))}
           </div>
@@ -703,4 +751,13 @@ function ReadOnlyBody({
       <p className="label text-low workout__ro-note">Edit reps &amp; notes in History.</p>
     </>
   );
+}
+
+/**
+ * Shown beside a set whose computed weight is lighter than the empty bar (45 lb
+ * / 20 kg). The weight itself is never changed (that would rewrite program
+ * math), but the lifter should know the plate math does not work out.
+ */
+function BelowBarHint() {
+  return <span className="label text-low setrow__belowbar">below bar</span>;
 }

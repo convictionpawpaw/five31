@@ -3,6 +3,7 @@ import type { LiftId, Units } from '../../core/types.ts';
 import { applyTmOverride } from '../../db/repo/index.ts';
 import { Button, Modal, NumberStepper, useToast } from '../../components/index.ts';
 import { LIFT_NAMES } from '../shared/liftLabels.ts';
+import { isValidTm, TM_REQUIRED_COPY } from './tmValidation.ts';
 
 /**
  * Mid-cycle TM override for a single lift. Seeds the stepper with the current TM,
@@ -25,9 +26,10 @@ export function TmOverrideModal({
   const toast = useToast();
   const [tm, setTm] = useState(currentTm);
   const [busy, setBusy] = useState(false);
+  const valid = isValidTm(tm);
 
   const confirm = async () => {
-    if (busy) return;
+    if (busy || !valid) return;
     setBusy(true);
     try {
       await applyTmOverride(liftId, tm);
@@ -46,10 +48,11 @@ export function TmOverrideModal({
           value={tm}
           onChange={setTm}
           step={step}
-          min={0}
+          min={step}
           suffix={units.toUpperCase()}
           label="Training max"
         />
+        {!valid && <p className="label text-danger tmmodal__warn">{TM_REQUIRED_COPY}</p>}
         <p className="label text-mid tmmodal__warn">
           Regenerates this lift&apos;s pending workouts only — completed work is never rewritten.
         </p>
@@ -57,7 +60,7 @@ export function TmOverrideModal({
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="primary" block onClick={confirm} disabled={busy}>
+          <Button variant="primary" block onClick={confirm} disabled={busy || !valid}>
             Apply
           </Button>
         </div>

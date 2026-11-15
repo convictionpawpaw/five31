@@ -221,16 +221,30 @@ function ResolvedDetail({ workout }: { workout: Workout }) {
                       {acc.setReps.map((r, si) => {
                         const key = `${ai}-${si}`;
                         if (editing) {
+                          const current = accReps[key];
                           return (
                             <div key={si} className="hdetail__acc-edit">
                               <span className="label text-low">Set {si + 1}</span>
-                              <NumberStepper
-                                value={accReps[key] ?? acc.repRangeMax}
-                                onChange={(v) => setAccReps((p) => ({ ...p, [key]: v }))}
-                                step={1}
-                                min={0}
-                                label={`${acc.name} set ${si + 1} reps`}
-                              />
+                              {current === null || current === undefined ? (
+                                // Unlogged stays unlogged until the user says
+                                // otherwise: a stepper pre-filled with the top
+                                // of the range would read as recorded, yet Save
+                                // skips an untouched key.
+                                <UnloggedSlot
+                                  label={`Log ${acc.name} set ${si + 1}`}
+                                  onLog={() =>
+                                    setAccReps((p) => ({ ...p, [key]: acc.repRangeMax }))
+                                  }
+                                />
+                              ) : (
+                                <NumberStepper
+                                  value={current}
+                                  onChange={(v) => setAccReps((p) => ({ ...p, [key]: v }))}
+                                  step={1}
+                                  min={0}
+                                  label={`${acc.name} set ${si + 1} reps`}
+                                />
+                              )}
                             </div>
                           );
                         }
@@ -299,22 +313,44 @@ function SetTable({
               target {fmtTargetReps(s.targetReps, s.amrap)}
             </span>
             {editing ? (
-              <NumberStepper
-                value={reps[key] ?? s.actualReps ?? s.targetReps}
-                onChange={(v) => onChange(key, v)}
-                step={1}
-                min={0}
-                label={`${s.kind} set reps`}
-              />
+              // `reps` is seeded from the workout on entering edit, so an
+              // undefined entry is an UNLOGGED set: show it as such, with an
+              // explicit Log tap that seeds the target. What is shown is what
+              // Save will write.
+              reps[key] === undefined ? (
+                <UnloggedSlot
+                  label={`Log ${s.kind} set ${s.index + 1}`}
+                  onLog={() => onChange(key, s.targetReps)}
+                />
+              ) : (
+                <NumberStepper
+                  value={reps[key]}
+                  onChange={(v) => onChange(key, v)}
+                  step={1}
+                  min={0}
+                  label={`${s.kind} set reps`}
+                />
+              )
             ) : (
-              <span className="settable__actual num">
-                {s.actualReps ?? '—'}
-                {s.amrap ? '+' : ''}
-              </span>
+              // Achieved reps are a plain count; the '+' belongs to the target
+              // ('target 5+'), not to what was done.
+              <span className="settable__actual num">{s.actualReps ?? '—'}</span>
             )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** An unlogged set in edit mode: a dash plus an explicit Log action. */
+function UnloggedSlot({ label, onLog }: { label: string; onLog: () => void }) {
+  return (
+    <span className="hdetail__unlogged">
+      <span className="label text-low">— not logged</span>
+      <Button variant="ghost" onClick={onLog} aria-label={label}>
+        Log
+      </Button>
+    </span>
   );
 }

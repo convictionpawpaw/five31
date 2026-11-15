@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetDb, lbOnboardingPayload } from './setup.ts';
+import { resetDb, lbOnboardingPayload, resolveOneWorkout } from './setup.ts';
 import { initializeFromOnboarding } from '../repo/onboardingRepo.ts';
 import {
   addDeloadToActiveCycle,
@@ -69,6 +69,7 @@ describe('training-day order (dayOrder)', () => {
     await initializeFromOnboarding(lbOnboardingPayload({ includeDeload: false }));
     await updateSettings({ dayOrder: CUSTOM });
 
+    await resolveOneWorkout();
     const c2 = await completeCycle(FINAL_TMS);
     expect(await weekOrder(c2.id, 1, CUSTOM)).toEqual(CUSTOM);
 

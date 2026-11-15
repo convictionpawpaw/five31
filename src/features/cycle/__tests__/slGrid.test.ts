@@ -94,6 +94,21 @@ describe('buildSlGrid — squat weight, stamped else projected', () => {
     expect(cell.basis).toBe('stamped');
   });
 
+  it('labels a stamped cell with its row units and an unstamped one with the block units', () => {
+    // Session 1 was stamped in lb (255); then the block was switched to kg.
+    const block = playInBlock(slBlock(), 1).map((w) =>
+      w.session === 1 ? w : { ...w, units: 'kg' as const },
+    );
+    const cells = buildSlGrid(block, slState({ squat: 117.5 }), 'kg').flatMap((r) => r.cells);
+    expect(cells[0]!.squatWeight).toBe(255);
+    expect(cells[0]!.units).toBe('lb');
+    expect(cells[1]!.basis).toBe('current');
+    expect(cells[1]!.units).toBe('kg');
+    // A cell with no weight carries no unit either.
+    const skipped = buildSlGrid(playInBlock(slBlock(), 1, { status: 'skipped' }), slState(), 'lb');
+    expect(skipped[0]!.cells[0]!.units).toBeNull();
+  });
+
   it('gives every cell its three rows for navigation', () => {
     const cell = buildSlGrid(slBlock(), slState())[0]!.cells[0]!;
     expect(cell.workouts.map((w) => w.liftId)).toEqual(['squat', 'bench', 'row']);

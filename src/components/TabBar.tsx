@@ -9,14 +9,16 @@ interface Tab {
 const TABS: Tab[] = [
   { to: '/', label: 'Today' },
   { to: '/cycle', label: 'Cycle' },
+  { to: '/stretch', label: 'Stretch' },
   { to: '/progress', label: 'Progress' },
   { to: '/history', label: 'History' },
   { to: '/settings', label: 'Settings' },
 ];
 
 /**
- * Fixed bottom navigation. 5 tabs, 56px tall + safe-area inset. Active tab is
- * amber with a cyan underline.
+ * Fixed bottom navigation. 6 tabs, 56px tall + safe-area inset. Active tab is
+ * amber with a cyan underline. A tab stays active on its sub-routes
+ * (e.g. /stretch/play), except Today which matches '/' exactly.
  */
 export function TabBar() {
   return (

@@ -1,5 +1,12 @@
 import { ulid } from 'ulid';
-import type { LiftId, SlCycleState, SlLiftRuntime, Units, Workout } from '../../core/types.ts';
+import type {
+  LiftId,
+  SlCycleState,
+  SlLiftRuntime,
+  TmEvent,
+  Units,
+  Workout,
+} from '../../core/types.ts';
 import { DAY_ORDER } from '../../core/scheme.ts';
 import { applyTmOverridePlan, type CycleLiftInput } from '../../core/cycle.ts';
 import { convertWeight, defaultLiftIncrements, defaultRoundingIncrement } from '../../core/units.ts';
@@ -14,7 +21,10 @@ import { requireSettings } from './settingsRepo.ts';
  *
  * Steps:
  *  - convert each LiftState TM (convertWeight, re-rounded to the new unit's
- *    default increment) and write a 'unit_conversion' TmEvent per lift.
+ *    default increment) and write a 'unit_conversion' TmEvent per lift. A TM
+ *    that is being switched straight BACK, untouched since the previous
+ *    switch, is restored to its exact pre-conversion value instead (see
+ *    {@link restoredTm}), so lb → kg → lb no longer drifts 135 → 130.
  *  - convert the active cycle's tms snapshot; set its units.
  *  - regenerate all PENDING workouts of the active cycle with the converted TMs
  *    (via core applyTmOverridePlan, per lift).
@@ -44,7 +54,9 @@ export async function switchUnits(to: Units): Promise<void> {
       for (const liftId of DAY_ORDER) {
         const state = await db.liftState.get(liftId);
         if (!state) continue;
-        const converted = convertTm(state.trainingMax);
+        const events = await db.tmEvents.where('liftId').equals(liftId).toArray();
+        const converted =
+          restoredTm(state.trainingMax, events, from, to) ?? convertTm(state.trainingMax);
         newTms[liftId] = converted;
         await db.liftState.put({ liftId, trainingMax: converted });
         await db.tmEvents.add({
@@ -141,6 +153,42 @@ export async function switchUnits(to: Units): Promise<void> {
       });
     },
   );
+}
+
+/**
+ * The exact TM to restore when a lift is switched straight back to the unit it
+ * was last converted FROM, or null to convert normally.
+ *
+ * A restore happens only when ALL of these hold:
+ *  - the lift's most recent TM event (by timestamp, then id) is a
+ *    'unit_conversion' — so no override, cycle advance or re-onboarding has
+ *    touched the TM since;
+ *  - that conversion went `to → from` (its note, written as `${from}→${to}` by
+ *    this function, says so; a missing or different note is not trusted);
+ *  - the current TM still equals that event's `toValue` exactly, so nothing
+ *    rewrote the TM without logging (an import, say);
+ *  - its `fromValue` is a finite number above zero.
+ *
+ * Anything else converts normally. Only TRAINING MAXES have this audit log;
+ * accessory weights/increments and StrongLifts working weights do not, and keep
+ * converting (and re-rounding) on every switch.
+ */
+export function restoredTm(
+  currentTm: number,
+  events: readonly TmEvent[],
+  from: Units,
+  to: Units,
+): number | null {
+  if (events.length === 0) return null;
+  const latest = [...events].sort(
+    (a, b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id),
+  )[events.length - 1]!;
+  if (latest.type !== 'unit_conversion') return null;
+  if (latest.note !== `${to}→${from}`) return null;
+  if (latest.toValue !== currentTm) return null;
+  const original = latest.fromValue;
+  if (original === null || !Number.isFinite(original) || original <= 0) return null;
+  return original;
 }
 
 /**

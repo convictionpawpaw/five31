@@ -16,6 +16,31 @@ export function decimalsForStep(step: number): number {
 }
 
 /**
+ * Decimal places the VALUE itself needs (0, 1 or 2), so a value finer than the
+ * step is never rounded on screen: 102.5 → 1, 61.25 → 2, 12.5 → 1, 285 → 0.
+ * Anything finer than hundredths is shown to 2 places, matching `fmtWeight`.
+ */
+export function decimalsForValue(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  for (let d = 0; d < 2; d++) {
+    const f = 10 ** d;
+    if (Math.abs(Math.round(value * f) / f - value) < 1e-9) return d;
+  }
+  return 2;
+}
+
+/**
+ * The precision ceiling a stepper renders with: enough for BOTH the step and
+ * the current value, and at least `decimals` when the caller pinned one. The
+ * value term is what keeps display and commit identical — with the step alone,
+ * 102.5 on a step-5 stepper read '103' and one tap read '108' while 107.5 was
+ * committed.
+ */
+export function displayDecimals(value: number, step: number, decimals?: number): number {
+  return Math.max(decimals ?? 0, decimalsForStep(step), decimalsForValue(value));
+}
+
+/**
  * Render a stepper value so the DISPLAY equals the COMMITTED value with no
  * noise. `dp` (from {@link decimalsForStep}) is the ceiling on precision, not a
  * demand for it: the value is fixed to `dp` places and any trailing zeros in the

@@ -2,6 +2,7 @@ import type {
   LiftId,
   SlCycleState,
   SlSlot,
+  Units,
   WeekNumber,
   Workout,
   WorkoutStatus,
@@ -28,6 +29,12 @@ export interface GridCell {
   status: WorkoutStatus | null;
   /** Top-set weight for the cell glyph (last work set), or null. */
   topWeight: number | null;
+  /**
+   * The units `topWeight` is denominated in: the workout row's OWN units, never
+   * the current settings. A set frozen in lb before a mid-cycle switch to kg is
+   * still 255 LB, not 255 KG. Null only for an empty cell.
+   */
+  units: Units | null;
 }
 
 /** One row of the grid: a week and its four lift cells (in the user's day order). */
@@ -58,6 +65,7 @@ export function buildGrid(
         workout,
         status: workout?.status ?? null,
         topWeight: top?.weight ?? null,
+        units: workout?.units ?? null,
       };
     }),
   }));
@@ -101,6 +109,12 @@ export interface SlGridCell {
   squatWeight: number | null;
   /** Where `squatWeight` came from — the cell must say when it is a forecast. */
   basis: SlWeightBasis;
+  /**
+   * The units `squatWeight` is denominated in. A STAMPED weight is frozen in its
+   * row's own units; a current/projected one is derived from the block runtime,
+   * which is denominated in the block's units. Null when there is no weight.
+   */
+  units: Units | null;
 }
 
 /** One row of the StrongLifts grid: a week and its three session cells. */
@@ -124,6 +138,8 @@ export interface SlGridRow {
 export function buildSlGrid(
   workouts: readonly Workout[],
   sl?: SlCycleState,
+  /** The block's (cycle's) units — what an unstamped, runtime-derived weight is in. */
+  blockUnits?: Units,
 ): SlGridRow[] {
   const rows: SlGridRow[] = [];
   for (let session = 1; session <= SL_SESSIONS_PER_CYCLE; session++) {
@@ -138,6 +154,7 @@ export function buildSlGrid(
       status: view.status,
       squatWeight: squat ? squat.weight : null,
       basis: squat ? squat.basis : 'none',
+      units: slCellUnits(squat, blockUnits),
     };
 
     const rowIndex = (session - 1) / SL_SESSIONS_PER_WEEK;
@@ -146,6 +163,16 @@ export function buildSlGrid(
     else rows.push({ week, cells: [cell] });
   }
   return rows;
+}
+
+/** Units for an SL cell's squat weight (see {@link SlGridCell.units}). */
+function slCellUnits(
+  squat: { weight: number | null; basis: SlWeightBasis; workout: Workout } | null,
+  blockUnits: Units | undefined,
+): Units | null {
+  if (squat === null || squat.weight === null) return null;
+  if (squat.basis === 'stamped') return squat.workout.units;
+  return blockUnits ?? squat.workout.units;
 }
 
 /**

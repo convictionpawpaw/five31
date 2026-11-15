@@ -12,6 +12,7 @@ import { fmtMonthYear, fmtShortDate, fmtWeight } from '../shared/format.ts';
 import {
   clusterSlRowsBySession,
   groupHistoryByCycle,
+  historyRowDate,
   isSlCycle,
   type HistoryGroup,
   type HistoryRow,
@@ -130,7 +131,10 @@ function HistoryRowItem({ row }: { row: HistoryRow }) {
   const { workout } = row;
   const skipped = workout.status === 'skipped';
   const set = effortSet(workout);
-  const dateStr = fmtShortDate(workout.completedAt ?? workout.startedAt ?? workout.id);
+  // A workout skipped before it was ever started has no date of its own; its
+  // ULID id is not one (it rendered as '01J9ZK3QWE'), so show a dash.
+  const rowDate = historyRowDate(workout);
+  const dateStr = rowDate === null ? '—' : fmtShortDate(rowDate);
 
   return (
     <li>

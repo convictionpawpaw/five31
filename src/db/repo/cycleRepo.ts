@@ -25,6 +25,40 @@ function assertNotSlCycle(cycle: Cycle, what: string): void {
   }
 }
 
+/**
+ * Refuse to act on a cycle other than the one the caller saw. Completing is not
+ * idempotent: a second (double-tapped, retried, or stale-screen) call would
+ * otherwise close the brand-new cycle as an empty phantom. Optional so existing
+ * callers keep working; callers SHOULD pass the id of the cycle on screen.
+ */
+function assertExpectedCycle(active: Cycle, expectedCycleId: string | undefined): void {
+  if (expectedCycleId !== undefined && active.id !== expectedCycleId) {
+    throw new Error('This cycle is no longer the active cycle (it was already completed).');
+  }
+}
+
+/**
+ * Refuse to complete a cycle in which nothing has been resolved. The UI's gate
+ * is stricter (every workout completed or skipped); this is the minimum rule
+ * the repo can enforce without second-guessing it: a cycle with NO completed or
+ * skipped workout has not been trained at all, which is exactly what the
+ * brand-new phantom of a repeated completion looks like. Completing with
+ * skipped workouts stays legal.
+ */
+async function assertHasResolvedWorkout(cycleId: string): Promise<void> {
+  const rows = await db.workouts.where('cycleId').equals(cycleId).toArray();
+  if (!rows.some((w) => w.status === 'completed' || w.status === 'skipped')) {
+    throw new Error('Cannot complete a cycle with no completed or skipped workouts.');
+  }
+}
+
+/** Reject a training max that is not a finite number above zero. */
+export function assertValidTm(value: unknown, what: string): void {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`${what} training max must be a number greater than zero.`);
+  }
+}
+
 /** Require a cycle to BE a StrongLifts block; returns the runtime without a cast. */
 function requireSlRuntime(cycle: Cycle): SlCycleState {
   const sl = cycle.sl;
@@ -86,9 +120,20 @@ export async function listCycles(): Promise<Cycle[]> {
  *     Settings, units from Settings) and build+insert its pending workouts.
  *
  * `finalTms` are the user-confirmed TMs (recommendation may have been overridden
- * in the Complete-Cycle modal). All-or-nothing.
+ * in the Complete-Cycle modal); each must be a finite number > 0. All-or-nothing.
+ *
+ * `expectedCycleId` (optional): the cycle the caller is completing. When given,
+ * a different active cycle is refused, so a repeated call cannot close the
+ * cycle the first call just opened. The active cycle must also have at least
+ * one completed or skipped workout.
  */
-export async function completeCycle(finalTms: Record<LiftId, number>): Promise<Cycle> {
+export async function completeCycle(
+  finalTms: Record<LiftId, number>,
+  expectedCycleId?: string,
+): Promise<Cycle> {
+  // Validate BEFORE the transaction: a NaN/0/negative TM would be frozen into
+  // LiftState, the audit log and every generated weight of the next cycle.
+  for (const liftId of DAY_ORDER) assertValidTm(finalTms[liftId], liftId);
   return db.transaction(
     'rw',
     db.settings,
@@ -100,9 +145,11 @@ export async function completeCycle(finalTms: Record<LiftId, number>): Promise<C
       const settings = await requireSettings();
       const active = await db.cycles.where('status').equals('active').first();
       if (!active) throw new Error('No active cycle to complete.');
+      assertExpectedCycle(active, expectedCycleId);
       // GUARD: a StrongLifts block has no TM advance to compute — completing it
       // goes through completeSlCycleContinue / completeSlCycleReturn instead.
       assertNotSlCycle(active, 'Completing a 5/3/1 cycle');
+      await assertHasResolvedWorkout(active.id);
 
       const now = new Date().toISOString();
 
@@ -215,6 +262,8 @@ export interface CompleteCycleToSlArgs {
    * beat a 5/3/1 record. OFF appends a reset marker to Settings.prResets.
    */
   keepPrs: boolean;
+  /** Optional: the cycle being completed; a different active cycle is refused. */
+  expectedCycleId?: string;
 }
 
 /**
@@ -262,6 +311,7 @@ export async function completeCycleToSl(args: CompleteCycleToSlArgs): Promise<Cy
     const settings = await requireSettings();
     const active = await db.cycles.where('status').equals('active').first();
     if (!active) throw new Error('No active cycle to complete.');
+    assertExpectedCycle(active, args.expectedCycleId);
     assertNotSlCycle(active, 'Switching to StrongLifts');
 
     const now = new Date().toISOString();
@@ -312,12 +362,16 @@ export async function completeCycleToSl(args: CompleteCycleToSlArgs): Promise<Cy
  * `settings` is deliberately out of scope: nothing here consumes an armed
  * switch (the user chose to keep going, so the arming survives for next time —
  * `clearPendingProgramSwitch` is the explicit disarm) and no PR reset happens.
+ *
+ * `expectedCycleId` and the resolved-workout rule: as {@link completeCycle}.
  */
-export async function completeSlCycleContinue(): Promise<Cycle> {
+export async function completeSlCycleContinue(expectedCycleId?: string): Promise<Cycle> {
   return db.transaction('rw', db.cycles, db.workouts, async () => {
     const active = await db.cycles.where('status').equals('active').first();
     if (!active) throw new Error('No active cycle to complete.');
+    assertExpectedCycle(active, expectedCycleId);
     const sl = requireSlRuntime(active);
+    await assertHasResolvedWorkout(active.id);
 
     const now = new Date().toISOString();
     await db.cycles.put({ ...active, status: 'completed', completedAt: now });
@@ -361,11 +415,14 @@ export async function completeSlCycleContinue(): Promise<Cycle> {
  *
  * `keepPrs` mirrors the switch in: true (default) leaves one unbroken record
  * timeline, false appends a reset marker. The armed switch is consumed either way.
+ * Each TM must be a finite number > 0; `expectedCycleId` as {@link completeCycle}.
  */
 export async function completeSlCycleReturn(
   finalTms: Record<LiftId, number>,
   keepPrs = true,
+  expectedCycleId?: string,
 ): Promise<Cycle> {
+  for (const liftId of DAY_ORDER) assertValidTm(finalTms[liftId], liftId);
   return db.transaction(
     'rw',
     db.settings,
@@ -377,6 +434,7 @@ export async function completeSlCycleReturn(
       const settings = await requireSettings();
       const active = await db.cycles.where('status').equals('active').first();
       if (!active) throw new Error('No active cycle to complete.');
+      assertExpectedCycle(active, expectedCycleId);
       requireSlRuntime(active);
 
       const now = new Date().toISOString();

@@ -156,3 +156,10 @@
   line-height: 1.4;
   text-align: center;
 }
+
+/* An unlogged set while editing: dash + explicit Log, never a pre-filled stepper. */
+.hdetail__unlogged {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

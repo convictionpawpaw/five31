@@ -140,14 +140,25 @@ describe('export / import with StrongLifts data', () => {
     expect(squatS2.mainSets).toHaveLength(5);
   });
 
-  it('still stamps schemaVersion 1 (StrongLifts needed NO migration)', async () => {
+  // StrongLifts itself needed NO migration; the version is 2 only because the
+  // Stretch feature added the stretchSessions table.
+  it('stamps the current schemaVersion with no StrongLifts-specific tables', async () => {
     const block = await seedSlBlock();
     await playSession(block.id, 1);
     const backup = await exportBackup();
     expect(backup.app).toBe('five31');
-    expect(backup.schemaVersion).toBe(1);
+    expect(backup.schemaVersion).toBe(2);
     expect(Object.keys(backup.data).sort()).toEqual(
-      ['accessories', 'bodyweight', 'cycles', 'liftState', 'settings', 'tmEvents', 'workouts'].sort(),
+      [
+        'accessories',
+        'bodyweight',
+        'cycles',
+        'liftState',
+        'settings',
+        'stretchSessions',
+        'tmEvents',
+        'workouts',
+      ].sort(),
     );
     // The closed 5/3/1 cycle's 12 rows plus the block's 36 — both shapes coexist
     // in one v1 export, which is the whole no-migration claim.
@@ -191,7 +202,7 @@ describe('export / import with StrongLifts data', () => {
   it('re-exports a legacy import byte-for-byte identically', async () => {
     await importBackup(structuredClone(LEGACY_V1_BACKUP));
     const re = await exportBackup();
-    expect(re.schemaVersion).toBe(1);
+    expect(re.schemaVersion).toBe(2);
     expect(re.data.settings).toEqual(LEGACY_V1_BACKUP.data.settings);
     expect(re.data.cycles).toEqual(LEGACY_V1_BACKUP.data.cycles);
     expect(re.data.workouts).toEqual(LEGACY_V1_BACKUP.data.workouts);

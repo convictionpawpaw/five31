@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { Cycle, LiftId } from '../../../core/types.ts';
-import { buildTmStepSeries } from '../progressData.ts';
+import type { AccessoryWork, Cycle, LiftId, Units, Workout } from '../../../core/types.ts';
+import { convertWeight } from '../../../core/units.ts';
+import {
+  accessorySparklineValues,
+  buildAccessorySeries,
+  buildBodyweightSeries,
+  buildTmStepSeries,
+} from '../progressData.ts';
 import {
   chartGeometry,
   computeYDomain,
@@ -54,5 +60,61 @@ describe('buildTmStepSeries (finding 6: x must be a 0-based index)', () => {
     const cycles = [cycle(1, 100), cycle(2, 105), cycle(3, 110)];
     const series = buildTmStepSeries(cycles, 'press', 'lb');
     expect(series.latest).toEqual({ value: 110, units: 'lb' });
+  });
+});
+
+function accWorkout(id: string, completedAt: string, weight: number, units: Units): Workout {
+  const acc: AccessoryWork = {
+    accessoryId: 'dips',
+    name: 'Dips',
+    weight,
+    targetSets: 3,
+    repRangeMin: 8,
+    repRangeMax: 12,
+    setReps: [12, 12, 12],
+    progressed: false,
+  };
+  return {
+    id,
+    cycleId: 'c1',
+    cycleNumber: 1,
+    week: 1,
+    liftId: 'bench',
+    status: 'completed',
+    tmUsed: 200,
+    mainSets: [],
+    accessoryWork: [acc],
+    units,
+    completedAt,
+  };
+}
+
+describe('accessorySparklineValues — converts like the full accessory chart', () => {
+  it('puts every point in the target units across a mid-history unit switch', () => {
+    const ws = [
+      accWorkout('a', '2026-07-01T10:00:00.000Z', 100, 'lb'),
+      accWorkout('b', '2026-07-08T10:00:00.000Z', 105, 'lb'),
+      accWorkout('c', '2026-07-15T10:00:00.000Z', 47.5, 'kg'),
+    ];
+    const spark = accessorySparklineValues(ws, 'dips', 'kg');
+    expect(spark).toEqual([
+      convertWeight(100, 'lb', 'kg'),
+      convertWeight(105, 'lb', 'kg'),
+      47.5,
+    ]);
+    // Identical to the full chart's y values.
+    expect(spark).toEqual(buildAccessorySeries(ws, 'dips', 'kg').points.map((p) => p.y));
+    // Last-N still applies.
+    expect(accessorySparklineValues(ws, 'dips', 'lb', 2)).toEqual([105, convertWeight(47.5, 'kg', 'lb')]);
+  });
+});
+
+describe('buildBodyweightSeries — date labels', () => {
+  it('labels a date-only entry with its own calendar day', () => {
+    const series = buildBodyweightSeries(
+      [{ id: 'b1', date: '2026-07-01', weight: 180, units: 'lb' }],
+      'lb',
+    );
+    expect(series.points[0]!.label).toBe('JUL 1');
   });
 });

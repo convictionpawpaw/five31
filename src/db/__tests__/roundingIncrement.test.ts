@@ -4,7 +4,7 @@
 // Canary vector: squat TM 265, week-1 top set 265 × 0.85 = 225.25 → 225 at
 // rounding 5 (the old bug rounded to the squat TM increment 10 → 230).
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetDb, lbOnboardingPayload } from './setup.ts';
+import { resetDb, lbOnboardingPayload, resolveOneWorkout } from './setup.ts';
 import { initializeFromOnboarding } from '../repo/onboardingRepo.ts';
 import {
   addDeloadToActiveCycle,
@@ -50,6 +50,7 @@ describe('set weights round to Settings.roundingIncrement, not lift TM increment
 
   it('(b) completeCycle: finalTms squat 265 → next cycle week-1 squat top set 225', async () => {
     await initializeFromOnboarding(lbOnboardingPayload({ roundingIncrement: 5 }));
+    await resolveOneWorkout();
     const c2 = await completeCycle(CANARY_TMS);
 
     const squatWk1 = (await getCycleWorkouts(c2.id)).find(

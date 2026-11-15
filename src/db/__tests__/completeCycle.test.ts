@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resetDb, lbOnboardingPayload } from './setup.ts';
+import { resetDb, lbOnboardingPayload, resolveOneWorkout } from './setup.ts';
 import { initializeFromOnboarding } from '../repo/onboardingRepo.ts';
 import { completeCycle, getActiveCycle, getCycleWorkouts, listCycles } from '../repo/cycleRepo.ts';
 import { getAllLiftStates } from '../repo/liftStateRepo.ts';
@@ -21,6 +21,7 @@ describe('completeCycle', () => {
     await initializeFromOnboarding(lbOnboardingPayload({ includeDeload: false }));
     const c1 = await getActiveCycle();
 
+    await resolveOneWorkout();
     const c2 = await completeCycle(FINAL_TMS);
 
     // Old cycle completed.
@@ -53,6 +54,7 @@ describe('completeCycle', () => {
 
   it('writes one cycle_advance TmEvent per lift (from → to)', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
+    await resolveOneWorkout();
     await completeCycle(FINAL_TMS);
 
     const advance = (await listAllTmEvents()).filter((e) => e.type === 'cycle_advance');
@@ -67,6 +69,7 @@ describe('completeCycle', () => {
 
   it('inherits includeDeload / units from Settings for the next cycle', async () => {
     await initializeFromOnboarding(lbOnboardingPayload({ includeDeload: true }));
+    await resolveOneWorkout();
     const c2 = await completeCycle(FINAL_TMS);
     expect(c2.includeDeload).toBe(true);
     expect(c2.units).toBe('lb');
@@ -76,6 +79,7 @@ describe('completeCycle', () => {
   it('is all-or-nothing: a mid-transaction failure leaves the original cycle active', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     const c1 = await getActiveCycle();
+    await resolveOneWorkout();
 
     const spy = vi.spyOn(db.workouts, 'bulkAdd').mockImplementationOnce(() => {
       throw new Error('boom');

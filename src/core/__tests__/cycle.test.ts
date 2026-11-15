@@ -314,6 +314,41 @@ describe('applyTmOverridePlan', () => {
     ]);
     // Other lifts untouched.
     expect(plan.regeneratedWorkouts.some((w) => w.liftId !== 'bench')).toBe(false);
+    expect(plan.preservedWorkoutIds).toEqual([]);
+  });
+
+  it('never wipes reps logged on a workout that was un-skipped back to pending', () => {
+    const ws = buildCycleWorkouts({
+      cycleId: 'c1',
+      cycleNumber: 1,
+      includeDeload: false,
+      units: 'lb',
+      lifts: LB_LIFTS,
+      ids: seqIds(12),
+    });
+    // Bench week 1: started, two sets logged, skipped, then un-skipped → pending
+    // again with its logged reps still on it.
+    const idx = ws.findIndex((w) => w.liftId === 'bench' && w.week === 1);
+    const original = ws[idx]!;
+    const unskipped: Workout = {
+      ...original,
+      status: 'pending',
+      startedAt: '2026-07-01T10:00:00.000Z',
+      mainSets: original.mainSets.map((s, i) =>
+        i < 2 ? { ...s, actualReps: s.targetReps, loggedAt: '2026-07-01T10:05:00.000Z' } : s,
+      ),
+    };
+    ws[idx] = unskipped;
+
+    const plan = applyTmOverridePlan(ws, 'bench', 220, 5);
+    expect(plan.preservedWorkoutIds).toEqual([unskipped.id]);
+    expect(plan.regeneratedWorkoutIds).not.toContain(unskipped.id);
+    // The other two pending bench workouts still regenerate normally.
+    expect(plan.regeneratedWorkoutIds).toHaveLength(2);
+    expect(plan.regeneratedWorkouts.every((w) => w.tmUsed === 220)).toBe(true);
+    // The input workout is not mutated: reps and frozen weights stay paired.
+    expect(ws[idx]!.mainSets.slice(0, 2).every((s) => s.actualReps !== undefined)).toBe(true);
+    expect(ws[idx]!.tmUsed).toBe(200);
   });
 });
 

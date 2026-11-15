@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { decimalsForStep, formatStepperValue } from './stepperFormat.ts';
+import { displayDecimals, formatStepperValue } from './stepperFormat.ts';
 import './NumberStepper.css';
 
 export interface NumberStepperProps {
@@ -8,7 +8,11 @@ export interface NumberStepperProps {
   step?: number;
   min?: number;
   max?: number;
-  /** Decimal places to display (e.g. 1 for 2.5 kg increments). Default: auto. */
+  /**
+   * Minimum decimal places to allow (e.g. 1 for 0.5 kg bodyweight). The display
+   * always uses enough places for the step AND the current value (up to 2), so
+   * this can never hide a committed fraction.
+   */
   decimals?: number;
   /** Uppercase unit/suffix shown after the number, e.g. 'LB'. */
   suffix?: string;
@@ -32,6 +36,18 @@ function normalize(n: number): number {
 /**
  * Big +/- stepper with press-and-hold auto-repeat. Finger-friendly (≥48px
  * buttons), clamps to min/max, and shows the value as a large Rajdhani numeral.
+ *
+ * Auto-repeat safety: the repeat is stopped by pointerup/leave/cancel on the
+ * button AND by any of the following, because a button that disables itself
+ * under the finger (at min/max) may never receive its own pointerup:
+ *  - the bump that reaches min or max;
+ *  - the control becoming disabled or reaching a bound by any route;
+ *  - pointerup / pointercancel anywhere in the window, window blur, or the page
+ *    becoming hidden;
+ *  - `value` changing to something this hold did not emit (the stepper was
+ *    repointed at another item — callers that reuse one stepper for several
+ *    items should ALSO give it a `key` per item, which remounts it);
+ *  - unmount.
  */
 export function NumberStepper({
   value,
@@ -50,6 +66,9 @@ export function NumberStepper({
 
   const delayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Values emitted by the CURRENT hold; anything else arriving means repointed. */
+  const emitted = useRef<Set<number>>(new Set());
+  const detachGlobal = useRef<(() => void) | null>(null);
 
   const stop = useCallback(() => {
     if (delayTimer.current !== null) {
@@ -60,39 +79,81 @@ export function NumberStepper({
       clearInterval(repeatTimer.current);
       repeatTimer.current = null;
     }
+    if (detachGlobal.current !== null) {
+      detachGlobal.current();
+      detachGlobal.current = null;
+    }
   }, []);
 
-  // Clean up timers on unmount.
+  // Clean up timers and global listeners on unmount.
   useEffect(() => stop, [stop]);
+
+  const atMin = value <= min;
+  const atMax = value >= max;
+
+  // Disabled, or at a bound by any route (including a parent clamping): stop.
+  useEffect(() => {
+    if (disabled || atMin || atMax) stop();
+  }, [disabled, atMin, atMax, stop]);
+
+  // A value this hold did not produce means the stepper now points at a
+  // different item (or something else rewrote it): never keep counting.
+  useEffect(() => {
+    if (!emitted.current.has(value)) stop();
+  }, [value, stop]);
 
   const bump = useCallback(
     (dir: 1 | -1) => {
       const next = clamp(normalize(valueRef.current + dir * step), min, max);
-      if (next !== valueRef.current) onChange(next);
+      if (next !== valueRef.current) {
+        emitted.current.add(next);
+        onChange(next);
+      }
+      // Reaching (or already sitting on) the bound ends any repeat right here,
+      // before the button disables itself under the finger.
+      if (next <= min || next >= max) stop();
     },
-    [max, min, onChange, step],
+    [max, min, onChange, step, stop],
   );
 
   const startHold = useCallback(
     (dir: 1 | -1) => {
       if (disabled) return;
-      bump(dir);
       stop();
+      emitted.current = new Set([valueRef.current]);
+      const next = clamp(normalize(valueRef.current + dir * step), min, max);
+      bump(dir);
+      // The single tap landed on (or was clamped to) a bound: nothing to repeat.
+      if (next <= min || next >= max) return;
+
+      const onGlobalEnd = () => stop();
+      const onVisibility = () => {
+        if (document.visibilityState !== 'visible') stop();
+      };
+      window.addEventListener('pointerup', onGlobalEnd);
+      window.addEventListener('pointercancel', onGlobalEnd);
+      window.addEventListener('blur', onGlobalEnd);
+      document.addEventListener('visibilitychange', onVisibility);
+      detachGlobal.current = () => {
+        window.removeEventListener('pointerup', onGlobalEnd);
+        window.removeEventListener('pointercancel', onGlobalEnd);
+        window.removeEventListener('blur', onGlobalEnd);
+        document.removeEventListener('visibilitychange', onVisibility);
+      };
+
       delayTimer.current = setTimeout(() => {
+        delayTimer.current = null;
         repeatTimer.current = setInterval(() => bump(dir), REPEAT_INTERVAL_MS);
       }, REPEAT_DELAY_MS);
     },
-    [bump, disabled, stop],
+    [bump, disabled, max, min, step, stop],
   );
 
-  // `dp` is the precision CEILING; formatStepperValue trims the padding so the
-  // number under the buttons is the number that will be committed — a whole
-  // 285 reads '285', never '285.0' beside a fmtWeight'd '285' in the same row.
-  const dp = decimals ?? decimalsForStep(step);
+  // The number under the buttons is the number that will be committed: enough
+  // places for the step and the value, trailing padding trimmed (a whole 285
+  // reads '285', never '285.0'; 102.5 on a step-5 stepper reads '102.5').
+  const dp = displayDecimals(value, step, decimals);
   const display = formatStepperValue(value, dp);
-
-  const atMin = value <= min;
-  const atMax = value >= max;
 
   return (
     <div className="stepper" role="group" aria-label={label}>

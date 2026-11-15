@@ -12,7 +12,12 @@ import type {
 import { DAY_ORDER, normalizeDayOrder } from '../../core/scheme.ts';
 import { buildCycleWorkouts, type CycleLiftInput } from '../../core/cycle.ts';
 import { db, SETTINGS_ID } from '../db.ts';
-import { CURRENT_SCHEMA_VERSION } from '../migrations.ts';
+/**
+ * Shape version of the Settings ROW. Independent of the backup schema version:
+ * backup v2 only added the stretchSessions table and did not change Settings,
+ * so new installs keep writing 1 exactly as before.
+ */
+const SETTINGS_ROW_VERSION = 1;
 
 /** One user-defined accessory captured during onboarding (pre-persistence). */
 export interface OnboardingAccessoryInput {
@@ -54,7 +59,7 @@ export interface OnboardingPayload {
 
 /**
  * Create the entire initial state in ONE transaction:
- *  - Settings (onboardingComplete: true, schemaVersion = CURRENT).
+ *  - Settings (onboardingComplete: true, schemaVersion = SETTINGS_ROW_VERSION).
  *  - LiftState per lift (authoritative TMs).
  *  - one 'initial' TmEvent per lift (fromValue null → chosen TM).
  *  - AccessoryDefs (in payload order, per-day order preserved).
@@ -105,7 +110,7 @@ export async function initializeFromOnboarding(payload: OnboardingPayload): Prom
     liftIncrements,
     ...(dayOrder !== undefined ? { dayOrder: [...normalizedOrder] } : {}),
     onboardingComplete: true,
-    schemaVersion: CURRENT_SCHEMA_VERSION,
+    schemaVersion: SETTINGS_ROW_VERSION,
   };
 
   const liftStates: LiftState[] = DAY_ORDER.map((liftId) => ({

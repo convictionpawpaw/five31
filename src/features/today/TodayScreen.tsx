@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { Cycle, SlCycleState, Settings, Workout } from '../../core/types.ts';
+import type { BodyweightEntry, Cycle, SlCycleState, Settings, Workout } from '../../core/types.ts';
 import { effortSet } from '../../core/efforts.ts';
 import { db } from '../../db/db.ts';
 import {
@@ -23,6 +23,9 @@ import {
 } from '../shared/workoutSelect.ts';
 import { workoutSetPr } from '../workout/workoutHelpers.ts';
 import { buildSlSessionView, lastCompletedSlSession, slSessionRows } from '../sl/slView.ts';
+import { localIsoDate } from '../../core/localDate.ts';
+import { StretchTodayPanel } from '../stretch/StretchTodayPanel.tsx';
+import { bodyweightSeed, bodyweightStep } from './bodyweightSeed.ts';
 import '../sl/sl.css';
 import './today.css';
 
@@ -32,7 +35,8 @@ interface TodayData {
   workouts: Workout[];
   /** Every workout across all cycles — needed for a true cross-cycle PR check. */
   allWorkouts: Workout[];
-  lastBodyweight: number | null;
+  /** The newest entry WITH its own units — the seed is converted from them. */
+  lastBodyweight: BodyweightEntry | null;
 }
 
 async function readToday(): Promise<TodayData> {
@@ -41,17 +45,8 @@ async function readToday(): Promise<TodayData> {
   const workouts = cycle ? await getCycleWorkouts(cycle.id) : [];
   const allWorkouts = await db.workouts.toArray();
   const bw = await listBodyweight();
-  const lastBodyweight = bw.length > 0 ? bw[bw.length - 1]!.weight : null;
+  const lastBodyweight = bw.length > 0 ? bw[bw.length - 1]! : null;
   return { settings, cycle, workouts, allWorkouts, lastBodyweight };
-}
-
-/** Today's calendar date as an ISO date string (local), e.g. '2026-07-05'. */
-function todayIso(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 export function TodayScreen() {
@@ -72,6 +67,7 @@ export function TodayScreen() {
     return (
       <div className="today">
         <p className="label today__loading">No active cycle.</p>
+        <StretchTodayPanel />
       </div>
     );
   }
@@ -110,10 +106,15 @@ export function TodayScreen() {
         />
       )}
 
+      <StretchTodayPanel />
+
+      {/* Keyed by units so a unit switch re-seeds the stepper in the new units. */}
       <BodyweightQuickLog
+        key={settings.units}
         units={settings.units}
-        seed={lastBodyweight}
+        seed={bodyweightSeed(lastBodyweight, settings.units)}
         onSaved={() => toast.show('Bodyweight saved', 'success')}
+        onError={(msg) => toast.show(msg, 'danger')}
       />
     </div>
   );
@@ -403,21 +404,26 @@ function BodyweightQuickLog({
   units,
   seed,
   onSaved,
+  onError,
 }: {
   units: Settings['units'];
-  seed: number | null;
+  /** Already converted into `units` and rounded to the step (bodyweightSeed). */
+  seed: number;
   onSaved: () => void;
+  onError: (message: string) => void;
 }) {
-  const step = units === 'lb' ? 1 : 0.5;
-  const [value, setValue] = useState<number>(seed ?? (units === 'lb' ? 180 : 82));
+  const step = bodyweightStep(units);
+  const [value, setValue] = useState<number>(seed);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      await upsertBodyweight(todayIso(), value, units);
+      await upsertBodyweight(localIsoDate(), value, units);
       onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not save bodyweight');
     } finally {
       setSaving(false);
     }
@@ -425,7 +431,7 @@ function BodyweightQuickLog({
 
   return (
     <HudPanel title="Bodyweight" className="today__bw">
-      <p className="label text-low today__bw-date">{todayIso()}</p>
+      <p className="label text-low today__bw-date">{localIsoDate()}</p>
       <div className="today__bw-row">
         <NumberStepper
           value={value}

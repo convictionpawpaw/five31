@@ -159,12 +159,33 @@ export interface TmOverridePlan {
   regeneratedWorkoutIds: string[];
   /** The regenerated workouts (pending only), with frozen new weights + tmUsed. */
   regeneratedWorkouts: Workout[];
+  /**
+   * Ids of PENDING workouts of the lift that were deliberately left untouched
+   * because they already carry logged main-set reps (see {@link hasLoggedMainReps}).
+   */
+  preservedWorkoutIds: string[];
+}
+
+/**
+ * Whether any main set of a workout carries logged reps. A workout can be
+ * `pending` and still hold logged reps: one that was started, logged, skipped
+ * and then un-skipped goes back to pending with its sets intact.
+ */
+export function hasLoggedMainReps(w: Workout): boolean {
+  return w.mainSets.some((s) => s.actualReps !== undefined);
 }
 
 /**
  * Plan a mid-cycle TM override for a single lift: regenerate the main sets of
  * only that lift's PENDING workouts using the new TM. Completed/in_progress/
  * skipped workouts are never touched (history-integrity invariant #1).
+ *
+ * A pending workout that already carries logged main-set reps (skip → un-skip
+ * of a started workout) is EXCLUDED and keeps its frozen sets and tmUsed. The
+ * alternative, recomputing weights while keeping the reps, would pair each
+ * logged rep count with a weight the user never lifted — a silent rewrite of
+ * what was recorded. Excluding it treats the workout like the in_progress one it
+ * effectively is. Its ids are reported in `preservedWorkoutIds`.
  *
  * `increment` is the WEIGHT-ROUNDING increment (Settings.roundingIncrement),
  * not the lift's TM bump.
@@ -177,16 +198,21 @@ export function applyTmOverridePlan(
 ): TmOverridePlan {
   const regeneratedWorkouts: Workout[] = [];
   const regeneratedWorkoutIds: string[] = [];
+  const preservedWorkoutIds: string[] = [];
 
   for (const w of workouts) {
     if (w.liftId !== liftId) continue;
     if (w.status !== 'pending') continue;
+    if (hasLoggedMainReps(w)) {
+      preservedWorkoutIds.push(w.id);
+      continue;
+    }
     const mainSets = buildMainSets(newTm, w.week, increment);
     regeneratedWorkouts.push({ ...w, tmUsed: newTm, mainSets });
     regeneratedWorkoutIds.push(w.id);
   }
 
-  return { liftId, newTm, regeneratedWorkoutIds, regeneratedWorkouts };
+  return { liftId, newTm, regeneratedWorkoutIds, regeneratedWorkouts, preservedWorkoutIds };
 }
 
 // ---------------------------------------------------------------------------

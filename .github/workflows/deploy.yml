@@ -8,11 +8,10 @@ on:
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
 
-# Least-privilege token: read the repo, publish Pages, mint the OIDC id-token.
+# Least-privilege token. Workflow default is read-only; only the deploy job
+# (which never runs repo code) gets Pages write + the OIDC id-token.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Only one Pages deploy at a time; don't cancel an in-flight production deploy.
 concurrency:
@@ -22,6 +21,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +35,9 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Test
         run: npm test -- --run
@@ -52,6 +56,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

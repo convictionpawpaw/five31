@@ -129,7 +129,7 @@ export function CycleScreen() {
                   </span>
                 ))}
               </div>
-              {buildSlGrid(workouts, sl).map((row) => (
+              {buildSlGrid(workouts, sl, cycle.units).map((row) => (
                 <div key={row.week} className="cycle__slgrid-row" role="row">
                   <span className="label cycle__grid-week" role="rowheader">
                     {row.week}
@@ -138,7 +138,6 @@ export function CycleScreen() {
                     <SlCell
                       key={cell.session}
                       cell={cell}
-                      units={settings.units}
                       onOpen={(session) => navigate(`/sl-session/${cycle.id}/${session}`)}
                     />
                   ))}
@@ -191,7 +190,6 @@ export function CycleScreen() {
                     <Cell
                       key={cell.liftId}
                       cell={cell}
-                      units={settings.units}
                       onOpen={(id) => navigate(`/workout/${id}`)}
                     />
                   ))}
@@ -283,15 +281,7 @@ export function CycleScreen() {
   );
 }
 
-function Cell({
-  cell,
-  units,
-  onOpen,
-}: {
-  cell: GridCell;
-  units: Settings['units'];
-  onOpen: (id: string) => void;
-}) {
+function Cell({ cell, onOpen }: { cell: GridCell; onOpen: (id: string) => void }) {
   if (cell.workout === null) {
     return <span className="cyclecell cyclecell--empty" aria-hidden="true" />;
   }
@@ -307,7 +297,8 @@ function Cell({
       <span className="num cyclecell__w">
         {cell.topWeight !== null ? fmtWeight(cell.topWeight) : '—'}
       </span>
-      <span className="label cyclecell__unit text-low">{units.toUpperCase()}</span>
+      {/* The row's OWN units: a set frozen in lb before a switch stays LB. */}
+      <span className="label cyclecell__unit text-low">{cell.units?.toUpperCase() ?? ''}</span>
     </button>
   );
 }
@@ -357,15 +348,7 @@ function SlWeightStrip({
   );
 }
 
-function SlCell({
-  cell,
-  units,
-  onOpen,
-}: {
-  cell: SlGridCell;
-  units: Settings['units'];
-  onOpen: (session: number) => void;
-}) {
+function SlCell({ cell, onOpen }: { cell: SlGridCell; onOpen: (session: number) => void }) {
   const glyphStatus = cell.status === 'mixed' ? 'pending' : cell.status;
   return (
     <button
@@ -381,7 +364,7 @@ function SlCell({
       <span className={`num slgridcell__w${cell.basis === 'projected' ? ' is-projected' : ''}`}>
         {cell.squatWeight !== null ? fmtWeight(cell.squatWeight) : '—'}
       </span>
-      <span className="label cyclecell__unit text-low">{units.toUpperCase()}</span>
+      <span className="label cyclecell__unit text-low">{cell.units?.toUpperCase() ?? ''}</span>
     </button>
   );
 }

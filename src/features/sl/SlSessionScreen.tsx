@@ -426,10 +426,15 @@ function LiftSection({
 
       {editing !== null && lift.basis === 'stamped' && (
         <div className="sllift__editor">
+          {/* One editor is repointed between sets: key it per set so a hold
+              on one set can never keep counting on the next. */}
           <NumberStepper
+            key={`${lift.workout.id}-${editing}`}
             value={lift.sets.find((s) => s.index === editing)?.actualReps ?? 5}
             onChange={(next) => {
-              void logSlSet(lift.workout.id, editing, next);
+              logSlSet(lift.workout.id, editing, next).catch((err: unknown) => {
+                toast.show(err instanceof Error ? err.message : 'Could not log the set', 'danger');
+              });
             }}
             step={1}
             min={0}

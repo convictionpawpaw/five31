@@ -10,13 +10,17 @@ import './styles/effects.css';
 
 import { registerSW } from 'virtual:pwa-register';
 import { initPersistence } from './pwa/persistence.ts';
+import { reloadWhenSafe } from './pwa/deferredReload.ts';
 import { seedDemoData } from './db/devSeed.ts';
 import App from './App.tsx';
 
 // Register the service worker (autoUpdate). Everything is precached, so this
-// simply makes the app installable + fully offline; the new build swaps in on
-// the next load. `immediate` registers on startup rather than on window load.
-registerSW({ immediate: true });
+// simply makes the app installable + fully offline. `immediate` registers on
+// startup rather than on window load. In autoUpdate mode the plugin would call
+// window.location.reload() the moment a new worker activates; `onNeedReload`
+// replaces that so a deploy never kills an in-flight stretch routine, workout
+// or StrongLifts session: the reload waits until the route leaves it.
+registerSW({ immediate: true, onNeedReload: () => reloadWhenSafe(window) });
 
 // Ask the browser to make storage persistent (best-effort; safe if unsupported).
 void initPersistence();

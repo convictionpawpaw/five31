@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Cycle, LiftId, MainSet, Units, Workout, WorkoutStatus } from '../../../core/types.ts';
-import { computePrWorkoutIds, groupHistoryByCycle } from '../historyGrouping.ts';
+import { ulid } from 'ulid';
+import {
+  computePrWorkoutIds,
+  groupHistoryByCycle,
+  historyRowDate,
+  ulidTimeIso,
+} from '../historyGrouping.ts';
 
 let seq = 0;
 /** Monotonic id so completedKey fallback ordering is deterministic. */
@@ -121,5 +127,38 @@ describe('groupHistoryByCycle', () => {
     const groups = groupHistoryByCycle([c1], [skipped]);
     expect(groups[0]!.rows).toHaveLength(1);
     expect(groups[0]!.rows[0]!.isPr).toBe(false);
+  });
+});
+
+describe('skipped, never-started workouts in history', () => {
+  it('have no display date (never the ULID id)', () => {
+    const id = ulid(Date.parse('2026-07-01T08:00:00.000Z'));
+    const skipped = mkWorkout({ id, cycleId: 'c1', cycleNumber: 1, liftId: 'bench', status: 'skipped' });
+    expect(historyRowDate(skipped)).toBeNull();
+    // A started-then-skipped workout dates from startedAt.
+    expect(historyRowDate({ ...skipped, startedAt: '2026-07-03T09:00:00.000Z' })).toBe(
+      '2026-07-03T09:00:00.000Z',
+    );
+  });
+
+  it('decodes a ULID creation time, and rejects non-ULIDs', () => {
+    const at = Date.parse('2026-07-01T08:00:00.000Z');
+    expect(ulidTimeIso(ulid(at))).toBe('2026-07-01T08:00:00.000Z');
+    expect(ulidTimeIso('000001')).toBeNull();
+    expect(ulidTimeIso('not a ulid at all, sorry!!')).toBeNull();
+  });
+
+  it('sort by their creation time — after everything trained in the cycle', () => {
+    const cycleStart = Date.parse('2026-07-01T08:00:00.000Z');
+    const c1 = mkCycle('c1', 1);
+    const skipped = mkWorkout({ id: ulid(cycleStart), cycleId: 'c1', cycleNumber: 1, liftId: 'bench', status: 'skipped' });
+    const done1 = mkWorkout({ id: ulid(cycleStart), cycleId: 'c1', cycleNumber: 1, liftId: 'press', status: 'completed', amrapWeight: 100, amrapReps: 5, completedAt: '2026-07-02T18:00:00.000Z' });
+    const startedSkip = {
+      ...mkWorkout({ id: ulid(cycleStart), cycleId: 'c1', cycleNumber: 1, liftId: 'squat', status: 'skipped' }),
+      startedAt: '2026-07-05T09:00:00.000Z',
+    };
+    const done2 = mkWorkout({ id: ulid(cycleStart), cycleId: 'c1', cycleNumber: 1, liftId: 'deadlift', status: 'completed', amrapWeight: 300, amrapReps: 5, completedAt: '2026-07-09T18:00:00.000Z' });
+    const groups = groupHistoryByCycle([c1], [skipped, done1, startedSkip, done2]);
+    expect(groups[0]!.rows.map((r) => r.workout.liftId)).toEqual(['deadlift', 'squat', 'press', 'bench']);
   });
 });
