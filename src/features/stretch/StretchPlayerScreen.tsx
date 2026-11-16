@@ -3,6 +3,7 @@ import { Navigate, useBlocker, useLocation, useNavigate } from 'react-router-dom
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Routine, RoutineStep } from '../../core/stretch/types.ts';
 import { getStretch } from '../../core/stretch/library.ts';
+import { resolveStep } from '../../core/stretch/variant.ts';
 import { computeStreak } from '../../core/stretch/streak.ts';
 import { localIsoDate } from '../../core/localDate.ts';
 import { addSavedRoutine, addStretchSession, listStretchSessions } from '../../db/repo/index.ts';
@@ -39,6 +40,7 @@ import { defaultRoutineName, repLabel, transitionKind } from './routineFormat.ts
 import { RoutineNameModal } from './RoutineNameModal.tsx';
 import { useToday } from './useToday.ts';
 import './stretch.css';
+import './modes.css';
 
 /**
  * Router state for /stretch/play. `done` marks a routine already saved;
@@ -122,7 +124,10 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
   const [now, setNow] = useState(() => Date.now());
   const lastSeenRef = useRef(Date.now());
   const [pauseReason, setPauseReason] = useState<PauseReason>(autostart ? null : 'start');
-  const [muted, setMuted] = useState(() => loadStretchPrefs().muted);
+  // Wind-down starts silent whatever the global preference; turning sound on
+  // there lasts for this session only (the preference is left alone).
+  const quietMode = routine.mode === 'winddown';
+  const [muted, setMuted] = useState(() => quietMode || loadStretchPrefs().muted);
   const [soundBlocked, setSoundBlocked] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState<ConfirmEnd | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -311,6 +316,7 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
       actualSec,
       minutes: routine.minutes,
       focusAreas: routine.focusAreas,
+      mode: routine.mode ?? 'focus',
       stretchIds: [...new Set(routine.steps.map((s) => s.stretchId))].filter((id) =>
         heldIds.current.has(id),
       ),
@@ -431,7 +437,7 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
     const next = !muted;
     setMuted(next);
     mutedRef.current = next;
-    saveStretchPrefs({ muted: next });
+    if (!quietMode) saveStretchPrefs({ muted: next });
     if (!next) kickAudio();
   };
 
@@ -482,15 +488,19 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
   const stepIndex = phase?.stepIndex ?? routine.steps.length - 1;
   const step: RoutineStep = routine.steps[stepIndex]!;
   const stretch = getStretch(step.stretchId)!;
+  // Pose and cues as this step does it (a no-chair variant when it says so).
+  const look = resolveStep(stretch, step);
+  const moving = stretch.kind === 'dynamic';
   const nextStep = routine.steps[stepIndex + 1];
   const nextStretch = nextStep ? getStretch(nextStep.stretchId) : undefined;
+  const nextLook = nextStep && nextStretch ? resolveStep(nextStretch, nextStep) : undefined;
   const isPrep = phase?.kind === 'prep';
   const ringFrac = phase ? Math.min(1, pos.phaseElapsedMs / phase.durMs) : 1;
   const R = 52;
   const C = 2 * Math.PI * R;
   const halfDone = activeSec * 2 >= routine.totalSec;
   const sideText = step.side ? `, ${step.side} side` : '';
-  const rep = repLabel(step);
+  const rep = moving ? null : repLabel(step);
   const repText = rep ? `, ${rep.toLowerCase()}` : '';
   const nextRep = repLabel(nextStep);
   // Between reps / sides of one stretch the transition says so, rather than
@@ -505,7 +515,13 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
   else lead = 'Next';
   if (pos.done) phaseText = 'Finished';
   else if (isPrep)
-    phaseText = kind === 'new' && stepIndex > 0 ? 'Next up: get into position' : lead;
+    phaseText =
+      kind === 'new' && stepIndex > 0
+        ? moving
+          ? 'Next up: get ready to move'
+          : 'Next up: get into position'
+        : lead;
+  else if (moving) phaseText = 'Keep moving';
   else phaseText = 'Hold';
 
   let pausedText = '';
@@ -519,9 +535,15 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
   // every second.
   let announce = '';
   if (!pos.done) {
-    announce = isPrep
-      ? `${lead}: ${stretch.name}${sideText}${repText}, ${step.holdSec} second hold`
-      : `Hold ${stretch.name}${sideText}${repText} for ${step.holdSec} seconds`;
+    if (moving) {
+      announce = isPrep
+        ? `${lead}: ${stretch.name}${sideText}, ${step.holdSec} seconds of movement`
+        : `Move: ${stretch.name}${sideText}, keep moving for ${step.holdSec} seconds`;
+    } else {
+      announce = isPrep
+        ? `${lead}: ${stretch.name}${sideText}${repText}, ${step.holdSec} second hold`
+        : `Hold ${stretch.name}${sideText}${repText} for ${step.holdSec} seconds`;
+    }
     if (pausedText) announce = `${pausedText}. ${announce}`;
   }
 
@@ -582,7 +604,9 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
 
       <div className={`splayer__stage${isPrep ? ' is-prep' : ''}`}>
         <StretchFigure
-          pose={stretch.pose}
+          pose={look.pose}
+          poseFrom={step.noChair ? undefined : stretch.poseFrom}
+          animate={running && !isPrep}
           mirrored={step.side === 'right'}
           title={`${stretch.name}${sideText}`}
           className={`splayer__figure${running && !isPrep ? ' is-live' : ''}`}
@@ -629,11 +653,17 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
           </text>
         </svg>
         <ul className="splayer__cues">
-          {stretch.cues.map((c) => (
+          {look.cues.map((c) => (
             <li key={c}>{c}</li>
           ))}
         </ul>
       </div>
+
+      {routine.breathing && !isPrep && !pos.done && (
+        <p className="splayer__breath" aria-hidden="true">
+          Breathe in for 4, out for 6
+        </p>
+      )}
 
       <div className="splayer__controls">
         <Button
@@ -672,7 +702,7 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
         {nextStep && nextStretch ? (
           <div className="splayer__next-row">
             <StretchFigure
-              pose={nextStretch.pose}
+              pose={nextLook?.pose ?? nextStretch.pose}
               mirrored={nextStep.side === 'right'}
               className="stretch__thumb"
             />
@@ -682,14 +712,17 @@ function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }
                 : nextStretch.name}
             </span>
             <span className="label stretch__side">
-              {[nextStep.side, nextRep && `${nextStep.rep}/${nextStep.repOf}`]
+              {[
+                nextStep.side,
+                nextRep && nextStretch.kind !== 'dynamic' && `${nextStep.rep}/${nextStep.repOf}`,
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </span>
             <span className="num stretch__step-sec">{nextStep.holdSec}s</span>
           </div>
         ) : (
-          <p className="label text-low">Last stretch</p>
+          <p className="label text-low">{moving ? 'Last movement' : 'Last stretch'}</p>
         )}
       </HudPanel>
 
@@ -746,10 +779,11 @@ function Completion({
     [sessions, today],
   );
   const creditedElsewhere = finished.date !== today;
+  const calm = routine.mode === 'winddown';
   return (
     <div className="splayer splayer--done safe-top">
       <HudPanel active className="splayer__done">
-        <p className="label text-cyan">Session complete</p>
+        <p className="label text-cyan">{calm ? 'All done. Rest well.' : 'Session complete'}</p>
         <p className="num num-xl text-amber">{fmtClock(finished.actualSec)}</p>
         <p className="label text-mid">
           of {fmtClock(routine.totalSec)} planned · saved for {finished.date}

@@ -223,8 +223,11 @@ const SL_CYCLE_STATE: Shape = {
 /** One step of a saved routine (src/core/stretch/types.ts RoutineStep). */
 const ROUTINE_STEP: Shape = {
   required: { stretchId: str, holdSec: num },
-  optional: { side: oneOf(['left', 'right']), rep: num, repOf: num },
+  optional: { side: oneOf(['left', 'right']), rep: num, repOf: num, noChair: bool },
 };
+
+/** Routine types (src/core/stretch/types.ts RoutineMode). */
+const ROUTINE_MODE_VALUES = ['warmup', 'midday', 'winddown', 'focus'];
 
 /**
  * A saved routine's snapshot. The fields the player reads to run and record a
@@ -238,7 +241,17 @@ const SAVED_ROUTINE_SNAPSHOT: Shape = {
     steps: arrayOf(shaped(ROUTINE_STEP)),
     totalSec: num,
   },
-  optional: { seed: num, reps: num, droppedAreas: arrayOf(str) },
+  optional: {
+    seed: num,
+    reps: num,
+    droppedAreas: arrayOf(str),
+    mode: oneOf(ROUTINE_MODE_VALUES),
+    // Strings only, like areas: the vocabularies belong to the stretch feature.
+    excluded: arrayOf(str),
+    lift: oneOf(['press', 'bench', 'squat', 'deadlift']),
+    skippedSlots: arrayOf(str),
+    breathing: bool,
+  },
 };
 
 const TABLE_SHAPES: Record<keyof BackupData, Shape> = {
@@ -348,6 +361,7 @@ const TABLE_SHAPES: Record<keyof BackupData, Shape> = {
       focusAreas: arrayOf(str),
       stretchIds: arrayOf(str),
     },
+    optional: { mode: oneOf(ROUTINE_MODE_VALUES) },
   },
   savedRoutines: {
     required: {

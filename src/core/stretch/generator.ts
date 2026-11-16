@@ -4,11 +4,15 @@ import {
   FLOOR_POSTURE_ORDER,
   POSITION_ORDER,
   type BodyArea,
+  type Equipment,
   type Reps,
+  type RoutineMode,
   type Routine,
   type RoutineStep,
   type Stretch,
+  type WarmupLift,
 } from './types.ts';
+import { focusLibrary, generateTemplateRoutine, normalizeExcluded } from './modes.ts';
 
 /**
  * Routine generator. Pure and deterministic for a given seed.
@@ -137,7 +141,7 @@ const COMPLEMENT_RANK_WEIGHT = [1, 0.8, 0.6] as const;
 export interface GenerateOptions {
   /** Target length in minutes; rounded and clamped to 5..10 (7 if not a number). */
   minutes: number;
-  /** Areas to focus on; empty for a well-rounded routine. */
+  /** Areas to focus on; empty for a well-rounded routine (focus mode only). */
   focusAreas: readonly BodyArea[];
   seed: number;
   /** Stretch ids done recently; avoided among equally relevant alternatives. */
@@ -146,6 +150,15 @@ export interface GenerateOptions {
   library?: readonly Stretch[];
   /** Reps per stretch, back to back; default {@link DEFAULT_REPS}. */
   reps?: Reps;
+  /**
+   * Routine type (default 'focus'). The others are template-built
+   * (modes.ts) and clamp minutes and reps to their own ranges.
+   */
+  mode?: RoutineMode;
+  /** Equipment to leave out (chair stretches switch to their no-chair variant). */
+  excluded?: readonly Equipment[];
+  /** Warm-up only: the lift to prepare for; absent = general warm-up. */
+  lift?: WarmupLift;
 }
 
 /** Reps used when none (or an invalid value) is requested. */
@@ -217,7 +230,37 @@ const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x
  * same options always yield the same routine.
  */
 export function generateRoutine(opts: GenerateOptions): Routine {
-  const library = opts.library ?? STRETCHES;
+  const mode = opts.mode ?? 'focus';
+  if (mode !== 'focus') {
+    return generateTemplateRoutine({
+      mode,
+      minutes: opts.minutes,
+      seed: opts.seed,
+      excluded: opts.excluded,
+      lift: opts.lift,
+      reps: opts.reps,
+      recentStretchIds: opts.recentStretchIds,
+      library: opts.library ?? STRETCHES,
+    });
+  }
+  const excluded = normalizeExcluded(opts.excluded);
+  // Focus routines are stretching routines: warm-up drills never enter them
+  // (cat-cow stays, see FOCUS_DYNAMIC_IDS), and excluded equipment is applied by rewriting the library (no-chair
+  // variants take their variant's position, so ordering stays right).
+  const { library, noChairIds } = focusLibrary(opts.library ?? STRETCHES, excluded);
+  const routine = buildFocusRoutine(opts, library);
+  if (opts.mode === 'focus') routine.mode = 'focus';
+  if (excluded.length > 0) {
+    routine.excluded = excluded;
+    routine.steps = routine.steps.map((st) =>
+      noChairIds.has(st.stretchId) ? { ...st, noChair: true } : st,
+    );
+  }
+  return routine;
+}
+
+/** The focus builder proper (the module doc), on an already-filtered library. */
+function buildFocusRoutine(opts: GenerateOptions, library: readonly Stretch[]): Routine {
   const minutes = clampMinutes(opts.minutes);
   const target = minutes * 60;
   const requested: readonly BodyArea[] = Array.isArray(opts.focusAreas) ? opts.focusAreas : [];

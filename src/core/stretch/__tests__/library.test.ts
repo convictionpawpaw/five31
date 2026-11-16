@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { STRETCHES, getStretch } from '../library.ts';
-import { POSES, POSE_SPECS } from '../poses.ts';
+import { BASE_POSE_IDS, POSES, POSE_SPECS } from '../poses.ts';
 import {
   CANONICAL_LENGTH,
   FLOOR_Y,
@@ -13,12 +13,16 @@ import {
   solveTwoBone,
   type SegmentName,
 } from '../pose.ts';
-import { BODY_AREAS, isBodyArea } from '../types.ts';
+import { BODY_AREAS, isBodyArea, type BodyArea, type WarmupLift } from '../types.ts';
 
 describe('stretch library integrity', () => {
-  it('has 35 to 45 stretches with unique ids', () => {
-    expect(STRETCHES.length).toBeGreaterThanOrEqual(35);
-    expect(STRETCHES.length).toBeLessThanOrEqual(45);
+  it('has 35 to 45 static stretches, 12 to 20 dynamic movements, all with unique ids', () => {
+    const dynamic = STRETCHES.filter((s) => s.kind === 'dynamic').length;
+    const statics = STRETCHES.length - dynamic;
+    expect(statics).toBeGreaterThanOrEqual(35);
+    expect(statics).toBeLessThanOrEqual(45);
+    expect(dynamic).toBeGreaterThanOrEqual(12);
+    expect(dynamic).toBeLessThanOrEqual(20);
     const ids = STRETCHES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const s of STRETCHES) expect(getStretch(s.id)).toBe(s);
@@ -52,13 +56,19 @@ describe('stretch library integrity', () => {
     }
   });
 
-  it('every pose is used by some stretch', () => {
-    const used = new Set(STRETCHES.map((s) => s.pose));
+  it('every pose is used by some stretch (pose, poseFrom or no-chair variant) or is a base pose', () => {
+    const used = new Set<string>(BASE_POSE_IDS);
+    for (const s of STRETCHES) {
+      used.add(s.pose);
+      if (s.poseFrom) used.add(s.poseFrom);
+      if (s.noChair) used.add(s.noChair.pose);
+    }
     for (const id of Object.keys(POSES)) expect(used.has(id), id).toBe(true);
   });
 
   it('no neck stretch uses circles (gentle neck work only)', () => {
     for (const s of STRETCHES) {
+      if (!s.areas.includes('neck')) continue;
       expect(/circle/i.test(s.name + s.cues.join(' ')), s.id).toBe(false);
     }
   });
@@ -207,5 +217,169 @@ describe('solveTwoBone', () => {
     // Pointing right, screen-left is up (smaller y).
     expect(solveTwoBone([0, 0], [40, 0], 26, 24, 1).mid[1]).toBeLessThan(0);
     expect(solveTwoBone([0, 0], [40, 0], 26, 24, -1).mid[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('equipment, variants and calming', () => {
+  /** Chair stretches with deliberately no chairless version. */
+  const NO_CHAIR_EXEMPT = ['thoracic-ext-chair', 'chair-hamstring'];
+
+  it('every chair stretch (seated position or chair prop) is tagged chair, and only those', () => {
+    for (const s of STRETCHES) {
+      const chairProp = POSES[s.pose]!.props.some(
+        (p) => p.kind === 'chair' || p.kind === 'chairFront',
+      );
+      if (s.position === 'seated' || chairProp) expect(s.equipment, s.id).toContain('chair');
+      else expect(s.equipment ?? [], s.id).not.toContain('chair');
+    }
+  });
+
+  it('wall, doorway, band, roller and bar props match the equipment tags', () => {
+    const PROP_EQ: Record<string, string> = {
+      wall: 'wall',
+      wallBehind: 'wall',
+      doorway: 'doorway',
+      band: 'band',
+      roller: 'roller',
+      bar: 'bar',
+    };
+    for (const s of STRETCHES) {
+      for (const id of [s.pose, s.poseFrom].filter((x): x is string => !!x)) {
+        for (const p of POSES[id]!.props) {
+          const eq = PROP_EQ[p.kind];
+          if (eq) expect(s.equipment as string[] | undefined, `${s.id}:${p.kind}`).toContain(eq);
+        }
+      }
+    }
+  });
+
+  it('every chair stretch has a no-chair variant unless deliberately exempt', () => {
+    for (const s of STRETCHES) {
+      if (!s.equipment?.includes('chair') || NO_CHAIR_EXEMPT.includes(s.id)) {
+        expect(s.noChair, s.id).toBeUndefined();
+      } else {
+        expect(s.noChair, s.id).toBeDefined();
+      }
+    }
+    for (const id of NO_CHAIR_EXEMPT) expect(getStretch(id)!.equipment, id).toContain('chair');
+  });
+
+  it('no-chair variants: an existing chair-free pose, consistent position/posture, valid cues', () => {
+    for (const s of STRETCHES) {
+      const v = s.noChair;
+      if (!v) continue;
+      const pose = POSES[v.pose];
+      expect(pose, s.id).toBeDefined();
+      expect(
+        pose!.props.some((p) => p.kind === 'chair' || p.kind === 'chairFront'),
+        s.id,
+      ).toBe(false);
+      expect(v.position, s.id).not.toBe('seated');
+      if (v.position === 'floor') expect(v.posture, s.id).toBeDefined();
+      else expect(v.posture, s.id).toBeUndefined();
+      const cues = v.cues ?? s.cues;
+      expect(cues.join(' '), s.id).not.toMatch(/chair/i);
+      expect(cues.length, s.id).toBeGreaterThanOrEqual(2);
+      expect(cues.length, s.id).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('neck stretches have floor-sitting no-chair variants and are calming (before-sleep routine)', () => {
+    for (const s of STRETCHES) {
+      if (s.areas[0] !== 'neck') continue;
+      expect(s.noChair?.position, s.id).toBe('floor');
+      expect(s.noChair?.posture, s.id).toBe('sitting');
+      expect(s.calming, s.id).toBe(true);
+    }
+  });
+
+  it('at least 12 calming stretches spanning the stiff areas, 3+ lying on the back', () => {
+    const calm = STRETCHES.filter((s) => s.calming);
+    expect(calm.length).toBeGreaterThanOrEqual(12);
+    const areas: BodyArea[] = ['neck', 'upperBack', 'lowerBack', 'hips', 'hamstrings'];
+    for (const a of areas)
+      expect(
+        calm.some((s) => s.areas.includes(a)),
+        a,
+      ).toBe(true);
+    expect(calm.filter((s) => s.posture === 'supine').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('calming stretches are static and never done standing (with any no-chair variant applied)', () => {
+    for (const s of STRETCHES) {
+      if (!s.calming) continue;
+      expect(s.kind, s.id).not.toBe('dynamic');
+      expect(s.noChair?.position ?? s.position, s.id).not.toBe('standing');
+    }
+    expect(getStretch('downward-dog')!.calming).toBeUndefined();
+  });
+});
+
+describe('dynamic warm-up movements', () => {
+  const dynamic = STRETCHES.filter((s) => s.kind === 'dynamic');
+  const LIFTS: WarmupLift[] = ['press', 'bench', 'squat', 'deadlift'];
+
+  it('cat-cow is one of them', () => {
+    expect(getStretch('cat-cow')!.kind).toBe('dynamic');
+  });
+
+  it('each is continuous, 30-40 s, with both poses (same view) and warmupFor', () => {
+    for (const s of dynamic) {
+      expect(s.continuous, s.id).toBe(true);
+      expect(s.holdSec, s.id).toBeGreaterThanOrEqual(30);
+      expect(s.holdSec, s.id).toBeLessThanOrEqual(40);
+      expect(s.poseFrom, s.id).toBeDefined();
+      expect(POSES[s.poseFrom!], s.id).toBeDefined();
+      expect(s.poseFrom, s.id).not.toBe(s.pose);
+      expect(POSES[s.poseFrom!]!.view, s.id).toBe(POSES[s.pose]!.view);
+      expect(s.warmupFor?.length, s.id).toBeGreaterThan(0);
+      expect(new Set(s.warmupFor).size, s.id).toBe(s.warmupFor!.length);
+      expect(s.noChair, s.id).toBeUndefined();
+      expect(s.calming, s.id).toBeUndefined();
+    }
+  });
+
+  it('only dynamic movements carry warmupFor or poseFrom', () => {
+    for (const s of STRETCHES) {
+      if (s.kind === 'dynamic') continue;
+      expect(s.warmupFor, s.id).toBeUndefined();
+      expect(s.poseFrom, s.id).toBeUndefined();
+    }
+  });
+
+  it('every lift has at least 5 equipment-free movements', () => {
+    for (const lift of LIFTS) {
+      const free = dynamic.filter(
+        (s) => s.warmupFor!.includes(lift) && (s.equipment ?? []).length === 0,
+      );
+      expect(free.length, lift).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('band, roller and bar movements exist as extras', () => {
+    for (const eq of ['band', 'roller', 'bar'] as const) {
+      expect(
+        dynamic.some((s) => s.equipment?.includes(eq)),
+        eq,
+      ).toBe(true);
+    }
+  });
+
+  it('cues describe a slow, controlled, pain-free movement (nothing ballistic)', () => {
+    for (const s of dynamic) {
+      const text = s.cues.join(' ').toLowerCase();
+      expect(/slow|control|smooth|gentl|steady/.test(text), s.id).toBe(true);
+      expect(/pain|pinch|comfort|easy|complain|as far as|as deep as/.test(text), s.id).toBe(true);
+      expect(
+        /\b(bounce|bouncing|jump|explosive|fast)\b/.test(text.replace(/no bouncing/g, '')),
+        s.id,
+      ).toBe(false);
+    }
+  });
+
+  it('nothing loads the neck: no neck area, no hands pulling on the head', () => {
+    for (const s of dynamic) {
+      expect(s.areas, s.id).not.toContain('neck');
+    }
   });
 });

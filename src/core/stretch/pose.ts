@@ -121,7 +121,18 @@ export type Prop =
   /** Front-view chair: seat centred on x. */
   | { kind: 'chairFront'; x: number; seatY: number }
   /** Top-view mat outline. */
-  | { kind: 'mat' };
+  | { kind: 'mat' }
+  /** Front view: the wall behind the figure (a pale panel). */
+  | { kind: 'wallBehind' }
+  /** Resistance band stretched between two joints (drawn over the figure). */
+  | { kind: 'band'; a: JointName; b: JointName }
+  /** Foam roller seen end-on: a circle resting on the floor, centred on x. */
+  | { kind: 'roller'; x: number }
+  /** Pull-up bar seen end-on (side view) at a point. */
+  | { kind: 'bar'; x: number; y: number };
+
+/** Foam roller radius (viewBox units). */
+export const ROLLER_R = 7;
 
 /** A highlighted direction arrow; `bend` offsets the curve's control point. */
 export interface Arrow {
@@ -359,4 +370,253 @@ export function buildPose(spec: PoseSpec): Pose {
     floor: spec.floor ?? true,
     fingers: { l: spec.fingers?.l ?? null, r: spec.fingers?.r ?? null },
   };
+}
+
+// --- Animation -----------------------------------------------------------------
+//
+// A figure animates by blending two RESOLVED poses in joint space and running
+// the result back through buildPose, so every frame is drawn on the canonical
+// skeleton: segment lengths never change mid-motion (only a declared
+// foreshortening factor, itself interpolated). Spine, head and limb angles are
+// interpolated RELATIVE to their parent segment along the shorter arc (author
+// any movement as an arc under 180 degrees per joint). A limb whose end is
+// targeted in both poses at the same kind of target (the same joint, or two
+// floor/wall points) with the same bend keeps using IK toward the
+// interpolated target, so planted hands and feet stay planted; one resting on
+// the floor in both poses slides along the floor the same way.
+
+/** Absolute angle (0 = up, 90 = right) of the vector from a to b. */
+export function angleOf(a: Pt, b: Pt): number {
+  return (Math.atan2(b[0] - a[0], -(b[1] - a[1])) * 180) / Math.PI;
+}
+
+/** Wrap an angle difference into [-180, 180). */
+export function wrap180(d: number): number {
+  return ((((d + 180) % 360) + 360) % 360) - 180;
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const lerpAngle = (a: number, b: number, t: number) => a + wrap180(b - a) * t;
+
+/** The angle-form spec that rebuilds a resolved pose exactly. */
+export function specFromPose(p: Pose): PoseSpec {
+  const j = p.joints;
+  const limbA = (root: Pt, m: Pt, end: Pt, f1: number, f2: number): LimbSpec => ({
+    a: [angleOf(root, m), angleOf(m, end)],
+    fs: [f1, f2],
+  });
+  return {
+    view: p.view,
+    hip: j.hip,
+    torso: [angleOf(j.hip, j.mid), angleOf(j.mid, j.neck)],
+    head: angleOf(j.neck, j.head),
+    face: p.face,
+    la: limbA(j.lShoulder, j.lElbow, j.lHand, p.fs.lUpperArm, p.fs.lForearm),
+    ra: limbA(j.rShoulder, j.rElbow, j.rHand, p.fs.rUpperArm, p.fs.rForearm),
+    ll: limbA(j.lHip, j.lKnee, j.lFoot, p.fs.lThigh, p.fs.lShin),
+    rl: limbA(j.rHip, j.rKnee, j.rFoot, p.fs.rThigh, p.fs.rShin),
+    props: p.props,
+    arrows: p.arrows,
+    hl: p.hl,
+    floor: p.floor,
+    fingers: { l: p.fingers.l ?? undefined, r: p.fingers.r ?? undefined },
+  };
+}
+
+/** Move a spec sideways: pelvis, absolute targets, arrows and props. */
+export function shiftSpec(spec: PoseSpec, dx: number): PoseSpec {
+  if (dx === 0) return spec;
+  const sh = (p: Pt): Pt => [p[0] + dx, p[1]];
+  const limbShift = (l: LimbSpec): LimbSpec =>
+    'to' in l && Array.isArray(l.to) ? { ...l, to: sh(l.to as Pt) } : l;
+  return {
+    ...spec,
+    hip: sh(spec.hip),
+    la: limbShift(spec.la),
+    ra: limbShift(spec.ra),
+    ll: limbShift(spec.ll),
+    rl: limbShift(spec.rl),
+    arrows: spec.arrows?.map((a) => ({ ...a, from: sh(a.from), to: sh(a.to) })),
+    props: spec.props?.map((p): Prop => {
+      switch (p.kind) {
+        case 'wall':
+        case 'doorway':
+        case 'chair':
+        case 'chairFront':
+        case 'roller':
+        case 'bar':
+          return { ...p, x: p.x + dx };
+        default:
+          return p;
+      }
+    }),
+  };
+}
+
+type BlendLimb = 'la' | 'ra' | 'll' | 'rl';
+const LIMB_JOINTS: Record<BlendLimb, readonly [JointName, JointName, JointName]> = {
+  la: ['lShoulder', 'lElbow', 'lHand'],
+  ra: ['rShoulder', 'rElbow', 'rHand'],
+  ll: ['lHip', 'lKnee', 'lFoot'],
+  rl: ['rHip', 'rKnee', 'rFoot'],
+};
+
+type RefTarget = { ref: JointName; dx?: number; dy?: number };
+
+/** A side-view joint resting on (within a few units of) the floor line. */
+function grounded(p: Pose, j: JointName): boolean {
+  return p.floor && p.view === 'side' && p.joints[j][1] >= FLOOR_Y - 5;
+}
+
+/** Which side of the root → end line the middle joint sits on (see solveTwoBone). */
+function bendSide(root: Pt, mid: Pt, end: Pt): 1 | -1 {
+  const ux = end[0] - root[0];
+  const uy = end[1] - root[1];
+  return (mid[0] - root[0]) * uy - (mid[1] - root[1]) * ux >= 0 ? 1 : -1;
+}
+
+/**
+ * The spec of the pose a fraction `t` of the way from `a` to `b` (t = 0 is
+ * `a`, t = 1 is `b`). Both must share a view. Props, arrows, highlights and
+ * the floor come from `b` (the pose being moved into). Pass the resolved
+ * poses when already built, to skip rebuilding them.
+ */
+export function blendSpecs(
+  a: PoseSpec,
+  b: PoseSpec,
+  t: number,
+  pa: Pose = buildPose(a),
+  pb: Pose = buildPose(b),
+): PoseSpec {
+  if (pa.view !== pb.view) {
+    throw new Error(`Cannot blend a ${pa.view} pose with a ${pb.view} pose`);
+  }
+  const ja = pa.joints;
+  const jb = pb.joints;
+
+  const tlA = angleOf(ja.hip, ja.mid);
+  const tlB = angleOf(jb.hip, jb.mid);
+  const tuA = angleOf(ja.mid, ja.neck);
+  const tuB = angleOf(jb.mid, jb.neck);
+  const hA = angleOf(ja.neck, ja.head);
+  const hB = angleOf(jb.neck, jb.head);
+
+  const tl = lerpAngle(tlA, tlB, t);
+  const tu = tl + lerpAngle(wrap180(tuA - tlA), wrap180(tuB - tlB), t);
+  const head = tu + lerpAngle(wrap180(hA - tuA), wrap180(hB - tuB), t);
+
+  let face: number | null;
+  if (pb.face === null) face = pa.face === null || t >= 0.5 ? null : head + wrap180(pa.face - hA);
+  else if (pa.face === null) face = head + wrap180(pb.face - hB);
+  else face = head + lerpAngle(wrap180(pa.face - hA), wrap180(pb.face - hB), t);
+
+  const parentA = { arm: tuA, leg: tlA };
+  const parentB = { arm: tuB, leg: tlB };
+  const parentT = { arm: tu, leg: tl };
+
+  const limbAt = (k: BlendLimb): LimbSpec => {
+    const sa = a[k];
+    const sb = b[k];
+    const fa = sa.fs ?? [1, 1];
+    const fb = sb.fs ?? [1, 1];
+    const fs: readonly [number, number] = [lerp(fa[0], fb[0], t), lerp(fa[1], fb[1], t)];
+    if ('to' in sa && 'to' in sb && sa.bend === sb.bend) {
+      if (Array.isArray(sa.to) && Array.isArray(sb.to)) {
+        const pA = sa.to as Pt;
+        const pB = sb.to as Pt;
+        return { to: [lerp(pA[0], pB[0], t), lerp(pA[1], pB[1], t)], bend: sb.bend, fs };
+      }
+      if (!Array.isArray(sa.to) && !Array.isArray(sb.to)) {
+        const ra = sa.to as RefTarget;
+        const rb = sb.to as RefTarget;
+        if (ra.ref === rb.ref) {
+          return {
+            to: {
+              ref: rb.ref,
+              dx: lerp(ra.dx ?? 0, rb.dx ?? 0, t),
+              dy: lerp(ra.dy ?? 0, rb.dy ?? 0, t),
+            },
+            bend: sb.bend,
+            fs,
+          };
+        }
+      }
+    }
+    const [root, m, end] = LIMB_JOINTS[k];
+    // A hand or foot resting on the floor at both ends slides along it (IK to
+    // the interpolated contact, bending to the end pose's side) instead of
+    // swinging through the floor.
+    if (grounded(pa, end) && grounded(pb, end)) {
+      const ea = ja[end];
+      const eb = jb[end];
+      const side = bendSide(jb[root], jb[m], eb);
+      if (bendSide(ja[root], ja[m], ea) === side) {
+        return { to: [lerp(ea[0], eb[0], t), lerp(ea[1], eb[1], t)], bend: side, fs };
+      }
+    }
+    const kind = k === 'la' || k === 'ra' ? 'arm' : 'leg';
+    const a1A = angleOf(ja[root], ja[m]);
+    const a2A = angleOf(ja[m], ja[end]);
+    const a1B = angleOf(jb[root], jb[m]);
+    const a2B = angleOf(jb[m], jb[end]);
+    const a1 =
+      parentT[kind] + lerpAngle(wrap180(a1A - parentA[kind]), wrap180(a1B - parentB[kind]), t);
+    const a2 = a1 + lerpAngle(wrap180(a2A - a1A), wrap180(a2B - a1B), t);
+    return { a: [a1, a2], fs };
+  };
+
+  const fingers = (fa: number | null, fb: number | null) =>
+    fa !== null && fb !== null ? lerpAngle(fa, fb, t) : (fb ?? undefined);
+
+  return {
+    view: pb.view,
+    hip: [lerp(ja.hip[0], jb.hip[0], t), lerp(ja.hip[1], jb.hip[1], t)],
+    torso: [tl, tu],
+    head,
+    face,
+    la: limbAt('la'),
+    ra: limbAt('ra'),
+    ll: limbAt('ll'),
+    rl: limbAt('rl'),
+    props: pb.props,
+    arrows: pb.arrows,
+    hl: pb.hl,
+    floor: pb.floor,
+    fingers: { l: fingers(pa.fingers.l, pb.fingers.l), r: fingers(pa.fingers.r, pb.fingers.r) },
+  };
+}
+
+/** {@link blendSpecs}, resolved. */
+export function blendPose(a: PoseSpec, b: PoseSpec, t: number, pa?: Pose, pb?: Pose): Pose {
+  return buildPose(blendSpecs(a, b, t, pa, pb));
+}
+
+/** One start → end → start cycle of a dynamic movement (ms). */
+export const LOOP_MS = 3600;
+/** A static hold eases in from this fraction of the way from its base pose. */
+export const SETTLE_FROM = 0.75;
+/** Length of the static ease-in (ms). */
+export const SETTLE_MS = 1500;
+/** Breathing once settled: depth (fraction of base → stretch) and period (ms). */
+export const BREATHE_AMP = 0.035;
+export const BREATHE_MS = 4000;
+
+/**
+ * Blend fraction at `ms` into the animation. 'loop': a dynamic movement,
+ * eased start → end → start. 'settle': a static hold easing in from
+ * {@link SETTLE_FROM} to the stretch, then breathing a little short of it and
+ * back (it never passes the authored stretch).
+ */
+export function animT(mode: 'loop' | 'settle', ms: number): number {
+  const m = Math.max(0, ms);
+  if (mode === 'loop') {
+    const u = (m % LOOP_MS) / LOOP_MS;
+    return (1 - Math.cos(2 * Math.PI * u)) / 2;
+  }
+  if (m < SETTLE_MS) {
+    const e = (1 - Math.cos((Math.PI * m) / SETTLE_MS)) / 2;
+    return SETTLE_FROM + (1 - SETTLE_FROM) * e;
+  }
+  const v = ((m - SETTLE_MS) % BREATHE_MS) / BREATHE_MS;
+  return 1 - (BREATHE_AMP * (1 - Math.cos(2 * Math.PI * v))) / 2;
 }

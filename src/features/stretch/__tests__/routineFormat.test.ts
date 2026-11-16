@@ -65,6 +65,24 @@ describe('routine format helpers', () => {
     expect(many.length).toBeLessThanOrEqual(ROUTINE_NAME_MAX);
   });
 
+  it('names mode routines by mode (and warm-up lift)', () => {
+    expect(defaultRoutineName({ minutes: 9, focusAreas: [], mode: 'winddown' })).toBe(
+      'Wind-down · 9 min',
+    );
+    expect(defaultRoutineName({ minutes: 5, focusAreas: [], mode: 'midday' })).toBe(
+      'Midday · 5 min',
+    );
+    expect(defaultRoutineName({ minutes: 4, focusAreas: [], mode: 'warmup', lift: 'squat' })).toBe(
+      'Warm-up: Squat · 4 min',
+    );
+    expect(defaultRoutineName({ minutes: 4, focusAreas: [], mode: 'warmup' })).toBe(
+      'Warm-up · 4 min',
+    );
+    expect(defaultRoutineName({ minutes: 7, focusAreas: [], mode: 'focus' })).toBe(
+      'Well-rounded · 7 min',
+    );
+  });
+
   it('finds stretch ids the library no longer has', () => {
     expect(missingStretchIds({ steps })).toEqual([]);
     expect(missingStretchIds({ steps: [...steps, { stretchId: 'retired', holdSec: 20 }] })).toEqual(

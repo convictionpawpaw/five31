@@ -1,23 +1,53 @@
-import { useId } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from 'react';
 import {
   FINGER_LEN,
   FLOOR_Y,
   HEAD_R,
+  ROLLER_R,
   SEGMENTS,
   VIEW_H,
   VIEW_W,
+  animT,
+  blendSpecs,
+  buildPose,
   dir,
+  shiftSpec,
+  specFromPose,
+  SETTLE_FROM,
   type Arrow,
   type Pose,
+  type PoseSpec,
   type Prop,
   type Pt,
   type SegmentName,
 } from '../../core/stretch/pose.ts';
-import { POSES } from '../../core/stretch/poses.ts';
+import { POSES, POSE_BASE, POSE_SPECS } from '../../core/stretch/poses.ts';
+import './figure.css';
 
 export interface StretchFigureProps {
   /** A pose id (key of POSES) or a resolved pose. */
   pose: string | Pose;
+  /**
+   * Start pose of a dynamic movement. With `animate`, the figure loops
+   * poseFrom → pose → poseFrom. Pass a stable value (an id, or a memoised
+   * pose): a new object every render restarts the animation.
+   */
+  poseFrom?: string | Pose;
+  /**
+   * Animate the figure (default false: a still drawing, exactly as before).
+   * A dynamic movement (poseFrom given) loops between its two poses; a static
+   * hold eases in from its neutral base pose and then breathes slightly.
+   * Ignored under prefers-reduced-motion (the end pose is drawn).
+   */
+  animate?: boolean;
   /** Mirror horizontally (the right-side step of a bilateral stretch). */
   mirrored?: boolean;
   /** Accessible label; omit for a decorative thumbnail. */
@@ -51,6 +81,8 @@ const WIDTH: Partial<Record<SegmentName, number>> = {
 /** Tightest zoom allowed, so small floor poses don't become all head. */
 const MAX_ZOOM = 1.7;
 const FIT_PAD = 12;
+/** Animation frame cap (about 30 fps). */
+const FRAME_MS = 1000 / 30;
 
 interface Box {
   x: number;
@@ -60,11 +92,14 @@ interface Box {
 }
 
 /**
- * The view box that frames this pose: the bounds of the figure, its arrows
+ * The view box that frames a pose: the bounds of the figure, its arrows
  * and props, padded, grown to the canonical aspect ratio and capped at
  * {@link MAX_ZOOM}. A fixed frame left crouched and lying poses tiny.
+ * `extra` adds more joint sets (an animation's other frames) so the frame
+ * holds still while the figure moves; props, arrows and the floor come
+ * from `p`.
  */
-function fitBox(p: Pose): Box {
+function fitBox(p: Pose, extra: readonly Pose[] = []): Box {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -76,8 +111,10 @@ function fitBox(p: Pose): Box {
     x1 = Math.max(x1, x + r);
     y1 = Math.max(y1, y + r);
   };
-  for (const [name, pt] of Object.entries(p.joints) as [string, Pt][]) {
-    add(pt[0], pt[1], name === 'head' ? HEAD_R + 4 : 7);
+  for (const q of [p, ...extra]) {
+    for (const [name, pt] of Object.entries(q.joints) as [string, Pt][]) {
+      add(pt[0], pt[1], name === 'head' ? HEAD_R + 4 : 7);
+    }
   }
   for (const a of p.arrows) {
     add(a.from[0], a.from[1], 6);
@@ -92,6 +129,10 @@ function fitBox(p: Pose): Box {
     } else if (prop.kind === 'chairFront') {
       add(prop.x - 28, prop.seatY - 56);
       add(prop.x + 28, FLOOR_Y);
+    } else if (prop.kind === 'roller') {
+      add(prop.x, FLOOR_Y - ROLLER_R, ROLLER_R);
+    } else if (prop.kind === 'bar') {
+      add(prop.x, prop.y, 6);
     }
   }
   if (p.floor) add((x0 + x1) / 2, FLOOR_Y, 2);
@@ -114,21 +155,174 @@ function fitBox(p: Pose): Box {
   return { x: cx - w / 2, y, w, h };
 }
 
+// --- Animation plan ---------------------------------------------------------------
+
+interface Plan {
+  mode: 'loop' | 'settle';
+  a: PoseSpec;
+  b: PoseSpec;
+  pa: Pose;
+  pb: Pose;
+  /** Frame fixed for the whole animation (union of sampled frames). */
+  box: Box;
+}
+
+function resolve(p: string | Pose): { spec: PoseSpec; pose: Pose } | null {
+  if (typeof p === 'string') {
+    const pose = POSES[p];
+    const spec = POSE_SPECS[p];
+    return pose && spec ? { spec, pose } : null;
+  }
+  return { spec: specFromPose(p), pose: p };
+}
+
+/**
+ * How a figure animates, or null to draw it still: no `poseFrom` and no base
+ * listed for the pose (or opted out), or the two poses cannot be blended.
+ */
+function makePlan(pose: string | Pose, poseFrom: string | Pose | undefined): Plan | null {
+  const end = resolve(pose);
+  if (!end) return null;
+  let mode: Plan['mode'];
+  let start: { spec: PoseSpec; pose: Pose } | null;
+  if (poseFrom !== undefined) {
+    mode = 'loop';
+    start = resolve(poseFrom);
+  } else {
+    mode = 'settle';
+    const baseId = typeof pose === 'string' ? POSE_BASE[pose] : null;
+    const base = baseId ? resolve(baseId) : null;
+    if (base) {
+      // Line the base up under the stretch so the ease-in never slides sideways.
+      const spec = shiftSpec(base.spec, end.pose.joints.hip[0] - base.pose.joints.hip[0]);
+      start = { spec, pose: buildPose(spec) };
+    } else start = null;
+  }
+  if (!start || start.pose.view !== end.pose.view) return null;
+  try {
+    const ts =
+      mode === 'loop'
+        ? [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875]
+        : [SETTLE_FROM, SETTLE_FROM + (1 - SETTLE_FROM) / 2];
+    const frames = ts.map((t) =>
+      buildPose(blendSpecs(start.spec, end.spec, t, start.pose, end.pose)),
+    );
+    return {
+      mode,
+      a: start.spec,
+      b: end.spec,
+      pa: start.pose,
+      pb: end.pose,
+      box: fitBox(end.pose, frames),
+    };
+  } catch {
+    return null;
+  }
+}
+
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+function subscribeReducedMotion(onChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+  const mq = window.matchMedia(REDUCED_MOTION);
+  mq.addEventListener?.('change', onChange);
+  return () => mq.removeEventListener?.('change', onChange);
+}
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(REDUCED_MOTION).matches
+  );
+}
+
+/**
+ * Elapsed animation time for `plan`, advanced by requestAnimationFrame at up
+ * to {@link FRAME_MS}. Paused while the document is hidden or the figure is
+ * scrolled out of view; restarts from 0 when the plan changes.
+ */
+function usePlanClock(plan: Plan | null, el: RefObject<SVGSVGElement | null>): number {
+  const [clock, setClock] = useState<{ plan: Plan | null; ms: number }>({ plan: null, ms: 0 });
+  useEffect(() => {
+    if (!plan) return;
+    let raf = 0;
+    let last = -1;
+    let lastPaint = -Infinity;
+    let ms = 0;
+    let inView = true;
+    const tick = (now: number) => {
+      raf = 0;
+      if (last >= 0) ms += Math.min(now - last, 100);
+      last = now;
+      if (now - lastPaint >= FRAME_MS - 2) {
+        lastPaint = now;
+        setClock({ plan, ms });
+      }
+      schedule();
+    };
+    const schedule = () => {
+      if (!raf && inView && !document.hidden) raf = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      last = -1;
+    };
+    const onVisibility = () => (document.hidden ? stop() : schedule());
+    document.addEventListener('visibilitychange', onVisibility);
+    let io: IntersectionObserver | undefined;
+    const node = el.current;
+    if (node && typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver((entries) => {
+        inView = entries.some((e) => e.isIntersecting);
+        if (inView) schedule();
+        else stop();
+      });
+      io.observe(node);
+    }
+    schedule();
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+      io?.disconnect();
+    };
+  }, [plan, el]);
+  return clock.plan === plan ? clock.ms : 0;
+}
+
 /**
  * Stick/capsule figure for a stretch, drawn from pose data as inline SVG and
  * themed with the app tokens: body in --text-hi, the far-side limbs of a
  * profile in --cyan, the stretched region and direction arrows in --amber.
  */
-export function StretchFigure({ pose, mirrored = false, title, className }: StretchFigureProps) {
+export function StretchFigure({
+  pose,
+  poseFrom,
+  animate = false,
+  mirrored = false,
+  title,
+  className,
+}: StretchFigureProps) {
   const rawId = useId();
   const markerId = `sfig-arrow-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const p = typeof pose === 'string' ? POSES[pose] : pose;
-  if (!p) return null;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const reduced = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false);
+  const plan = useMemo(
+    () => (animate && !reduced ? makePlan(pose, poseFrom) : null),
+    [animate, reduced, pose, poseFrom],
+  );
+  const ms = usePlanClock(plan, svgRef);
+
+  const still = typeof pose === 'string' ? POSES[pose] : pose;
+  if (!still) return null;
+
+  const p = plan
+    ? buildPose(blendSpecs(plan.a, plan.b, animT(plan.mode, ms), plan.pa, plan.pb))
+    : still;
+  const box = plan ? plan.box : fitBox(still);
 
   const j = p.joints;
   const hl = new Set(p.hl);
   const side = p.view === 'side';
-  const box = fitBox(p);
 
   const seg = (name: SegmentName, far = false) => {
     const [a, b] = SEGMENTS[name];
@@ -230,7 +424,8 @@ export function StretchFigure({ pose, mirrored = false, title, className }: Stre
 
   return (
     <svg
-      className={['sfig', className ?? ''].filter(Boolean).join(' ')}
+      ref={svgRef}
+      className={['sfig', plan ? 'sfig--animated' : '', className ?? ''].filter(Boolean).join(' ')}
       viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}
       role={title ? 'img' : undefined}
       aria-label={title}
@@ -265,6 +460,18 @@ export function StretchFigure({ pose, mirrored = false, title, className }: Stre
         <g strokeLinecap="round" strokeLinejoin="round">
           {body}
         </g>
+        {p.props.map((prop, i) =>
+          prop.kind === 'band' ? (
+            <line
+              key={`band${i}`}
+              className="sfig__band"
+              x1={j[prop.a][0]}
+              y1={j[prop.a][1]}
+              x2={j[prop.b][0]}
+              y2={j[prop.b][1]}
+            />
+          ) : null,
+        )}
         {p.arrows.map((a, i) => (
           <ArrowShape key={i} arrow={a} markerId={markerId} />
         ))}
@@ -342,5 +549,22 @@ function PropShape({ prop, box }: { prop: Prop; box: Box }) {
           rx={6}
         />
       );
+    case 'wallBehind':
+      return (
+        <rect
+          className="sfig__wall-behind"
+          x={box.x + 4}
+          y={top}
+          width={box.w - 8}
+          height={FLOOR_Y - top}
+        />
+      );
+    case 'roller':
+      return <circle className="sfig__roller" cx={prop.x} cy={FLOOR_Y - ROLLER_R} r={ROLLER_R} />;
+    case 'bar':
+      return <circle className="sfig__bar" cx={prop.x} cy={prop.y} r={4.5} />;
+    case 'band':
+      // Drawn over the figure, after the body.
+      return null;
   }
 }

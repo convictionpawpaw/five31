@@ -1,4 +1,6 @@
 import type { StreakSummary } from '../../core/stretch/streak.ts';
+import type { RoutineMode } from '../../core/stretch/types.ts';
+import { MODE_LABELS } from '../../core/stretch/modes.ts';
 import { HudPanel } from '../../components/index.ts';
 import { streakStatus } from './stretchFormat.ts';
 
@@ -16,7 +18,14 @@ function calendarLabel(summary: StreakSummary): string {
   return `Last 5 weeks: stretched on ${done} of ${past.length} days, ${today}`;
 }
 
-export function StreakPanel({ summary }: { summary: StreakSummary }) {
+export function StreakPanel({
+  summary,
+  modeCounts,
+}: {
+  summary: StreakSummary;
+  /** Sessions per routine type over the last 30 days (omit to hide the line). */
+  modeCounts?: readonly { mode: RoutineMode; count: number }[];
+}) {
   const status = streakStatus(summary);
   return (
     <HudPanel title="Streak" active={summary.doneToday} className="streak">
@@ -50,6 +59,12 @@ export function StreakPanel({ summary }: { summary: StreakSummary }) {
           <dd className="num num-md">{summary.sessionsThisWeek}</dd>
         </div>
       </dl>
+
+      {modeCounts && modeCounts.length > 0 && (
+        <p className="streak__modes label">
+          30 days: {modeCounts.map((m) => `${MODE_LABELS[m.mode]} ${m.count}`).join(' · ')}
+        </p>
+      )}
 
       <div className="streak__cal" role="img" aria-label={calendarLabel(summary)}>
         {WEEKDAYS.map((d, i) => (

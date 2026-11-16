@@ -304,6 +304,13 @@ describe('import validation: rows (rejected before any DB mutation)', () => {
       /'stretchSessions' row 0 is missing 'focusAreas'/,
     ],
     [
+      'a stretch session with an unknown mode',
+      (b) => {
+        (b.data.stretchSessions![0] as unknown as Record<string, unknown>).mode = 'nap';
+      },
+      /'stretchSessions' row 0 field 'mode'/,
+    ],
+    [
       'a settings row with a foreign id',
       (b) => {
         (b.data.settings[0] as unknown as Record<string, unknown>).id = 'main';
@@ -352,5 +359,18 @@ describe('import validation: rows (rejected before any DB mutation)', () => {
     const withAcc = backup.data.workouts.find((w) => w.accessoryWork.length > 0)!;
     withAcc.accessoryWork[0]!.setReps[0] = null;
     expect(() => validateBackup(backup)).not.toThrow();
+  });
+});
+
+describe('stretch session routine type', () => {
+  it('imports sessions with and without a mode (optional field)', async () => {
+    await initializeFromOnboarding(lbOnboardingPayload());
+    await addStretchSession({ ...stretch('2026-07-04'), mode: 'winddown' });
+    await addStretchSession(stretch('2026-07-05'));
+    const backup = parseBackupJson(JSON.stringify(await exportBackup()));
+    await resetDb();
+    await importBackup(backup);
+    const rows = await listStretchSessions();
+    expect(rows.map((r) => r.mode)).toEqual(['winddown', undefined]);
   });
 });

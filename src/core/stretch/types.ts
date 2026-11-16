@@ -82,6 +82,37 @@ export const FLOOR_POSTURE_ORDER: readonly FloorPosture[] = [
   'prone',
 ];
 
+/** The four kinds of routine the Stretch screen offers. */
+export type RoutineMode = 'warmup' | 'midday' | 'winddown' | 'focus';
+
+export const ROUTINE_MODES: readonly RoutineMode[] = ['warmup', 'midday', 'winddown', 'focus'];
+
+/** Things a stretch may need. The user can exclude any of these per routine. */
+export type Equipment = 'chair' | 'wall' | 'doorway' | 'band' | 'roller' | 'bar';
+
+export const EQUIPMENT: readonly Equipment[] = [
+  'chair',
+  'wall',
+  'doorway',
+  'band',
+  'roller',
+  'bar',
+];
+
+/** The four barbell lifts a warm-up can prepare for (mirrors core LiftId). */
+export type WarmupLift = 'press' | 'bench' | 'squat' | 'deadlift';
+
+/**
+ * How a stretch is done without one of its props (today: without the chair).
+ * Everything not overridden here is taken from the stretch itself.
+ */
+export interface StretchVariant {
+  pose: string;
+  position: StretchPosition;
+  posture?: FloorPosture;
+  cues?: string[];
+}
+
 /** One stretch in the library. */
 export interface Stretch {
   /** Stable kebab-case id; persisted in sessions, never renamed. */
@@ -105,6 +136,28 @@ export interface Stretch {
    * repeated as a block: it always stays one step.
    */
   continuous?: true;
+  /**
+   * 'dynamic' = a controlled movement done for time (warm-ups); it is always
+   * `continuous`. Absent = a static hold.
+   */
+  kind?: 'static' | 'dynamic';
+  /** Props it needs; absent or empty = none. */
+  equipment?: Equipment[];
+  /**
+   * The same stretch done without the chair (standing or on the floor). When
+   * the chair is excluded, a chair stretch with this variant is still usable;
+   * one without it is left out.
+   */
+  noChair?: StretchVariant;
+  /** Dynamic movements only: the lifts it warms up for. */
+  warmupFor?: WarmupLift[];
+  /** Calm enough for the before-sleep routine (slow, low, no balance). */
+  calming?: true;
+  /**
+   * Pose the figure animates FROM (key into POSES). Dynamic movements author
+   * both ends; static holds may omit it and ease in from a neutral base.
+   */
+  poseFrom?: string;
 }
 
 export type Side = 'left' | 'right';
@@ -124,6 +177,8 @@ export interface RoutineStep {
   rep?: number;
   /** How many reps this stretch gets; absent (or 1) for a stretch done once. */
   repOf?: number;
+  /** Done in its no-chair variant ({@link Stretch.noChair}). */
+  noChair?: true;
 }
 
 /** A generated routine. */
@@ -133,6 +188,12 @@ export interface Routine {
   /** Focus areas it was built for; empty means well-rounded. */
   focusAreas: BodyArea[];
   seed: number;
+  /** Which kind of routine this is; absent (older routines) means 'focus'. */
+  mode?: RoutineMode;
+  /** Equipment the user excluded when it was built. */
+  excluded?: Equipment[];
+  /** Warm-ups only: the lift it prepares for. */
+  lift?: WarmupLift;
   /**
    * Reps requested (most stretches get this many; some get fewer when time
    * is short, continuous ones always one). Optional only so routines made
@@ -149,6 +210,15 @@ export interface Routine {
    * before this field existed still type-check.
    */
   droppedAreas?: BodyArea[];
+  /**
+   * Template slots (by label, e.g. "Chest opener") that no usable stretch
+   * could fill: the library has none for this mode, or excluded equipment
+   * ruled them all out. Absent or empty when every slot was filled or only
+   * trimmed for time.
+   */
+  skippedSlots?: string[];
+  /** Show a slow-breathing cue during holds (wind-down routines). */
+  breathing?: true;
 }
 
 /** A completed (or substantially completed) stretch session, as persisted. */
@@ -170,6 +240,8 @@ export interface StretchSession {
   focusAreas: BodyArea[];
   /** Unique stretch ids in the order performed. */
   stretchIds: string[];
+  /** Which kind of routine it was; absent (older sessions) means 'focus'. */
+  mode?: RoutineMode;
 }
 
 /** A routine the user saved by name; replays exactly as saved. */

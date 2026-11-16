@@ -6,6 +6,7 @@ import {
   type RoutineStep,
 } from '../../core/stretch/types.ts';
 import { getStretch } from '../../core/stretch/library.ts';
+import { MODE_LABELS, WARMUP_LIFT_LABELS } from '../../core/stretch/modes.ts';
 import { ROUTINE_NAME_MAX } from '../../db/repo/stretchRepo.ts';
 
 /** The one-tap owner preset (neck and back work). */
@@ -75,10 +76,17 @@ export function routineReps(r: Pick<Routine, 'steps' | 'reps'>): number {
 }
 
 /**
- * Default name for saving a routine, e.g. "Neck + back + chest · 7 min" or
- * "Well-rounded · 7 min"; always within the name limit.
+ * Default name for saving a routine, e.g. "Neck + back + chest · 7 min",
+ * "Well-rounded · 7 min", "Wind-down · 9 min" or "Warm-up: Squat · 4 min";
+ * always within the name limit.
  */
-export function defaultRoutineName(r: Pick<Routine, 'focusAreas' | 'minutes'>): string {
+export function defaultRoutineName(
+  r: Pick<Routine, 'focusAreas' | 'minutes' | 'mode' | 'lift'>,
+): string {
+  if (r.mode && r.mode !== 'focus') {
+    const lift = r.mode === 'warmup' && r.lift ? `: ${WARMUP_LIFT_LABELS[r.lift]}` : '';
+    return `${MODE_LABELS[r.mode]}${lift} · ${r.minutes} min`;
+  }
   const areas = BODY_AREAS.filter((a) => r.focusAreas.includes(a));
   const tail = ` · ${r.minutes} min`;
   let head: string;

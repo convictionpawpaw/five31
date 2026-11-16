@@ -129,6 +129,26 @@ describe('backup schema v3: saved routines', () => {
     expect(await snapshot()).toEqual(before);
   });
 
+  it('round-trips routine-type fields (mode, exclusions, lift, variants, breathing)', async () => {
+    await initializeFromOnboarding(lbOnboardingPayload());
+    const typed = {
+      ...routine(1),
+      mode: 'winddown' as const,
+      excluded: ['chair' as const],
+      lift: 'squat' as const,
+      skippedSlots: ['Gentle neck'],
+      breathing: true as const,
+    };
+    typed.steps = typed.steps.map((s) => ({ ...s, noChair: true as const }));
+    await addSavedRoutine('Typed', typed);
+    const backup = await exportBackup();
+    const before = await snapshot();
+    const parsed = parseBackupJson(JSON.stringify(backup));
+    await resetDb();
+    await importBackup(parsed);
+    expect(await snapshot()).toEqual(before);
+  });
+
   it('a v3 import REPLACES saved routines', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     const kept = await addSavedRoutine('In backup', routine(1));
@@ -232,6 +252,16 @@ describe('backup schema v3: saved routines', () => {
       /field 'rep' must be a finite number/,
     ],
     ['a missing createdAt', (r) => delete r.createdAt, /is missing 'createdAt'/],
+    [
+      'an unknown mode',
+      (r) => ((r.routine as Record<string, unknown>).mode = 'nap'),
+      /field 'mode' must be one of/,
+    ],
+    [
+      'a non-boolean noChair',
+      (r) => ((r.routine as { steps: Record<string, unknown>[] }).steps[0]!.noChair = 'yes'),
+      /field 'noChair' must be a boolean/,
+    ],
   ];
 
   it.each(bad)('rejects a saved routine with %s, DB unchanged', async (_label, mutate, pattern) => {

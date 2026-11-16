@@ -25,6 +25,7 @@ import { workoutSetPr } from '../workout/workoutHelpers.ts';
 import { buildSlSessionView, lastCompletedSlSession, slSessionRows } from '../sl/slView.ts';
 import { localIsoDate } from '../../core/localDate.ts';
 import { StretchTodayPanel } from '../stretch/StretchTodayPanel.tsx';
+import { nextWarmupLift } from '../stretch/nextLift.ts';
 import { bodyweightSeed, bodyweightStep } from './bodyweightSeed.ts';
 import '../sl/sl.css';
 import './today.css';
@@ -106,7 +107,7 @@ export function TodayScreen() {
         />
       )}
 
-      <StretchTodayPanel />
+      <StretchTodayPanel warmupLift={nextWarmupLift(settings, cycle, workouts)} />
 
       {/* Keyed by units so a unit switch re-seeds the stepper in the new units. */}
       <BodyweightQuickLog
