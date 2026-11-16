@@ -61,13 +61,13 @@ describe('stretchRepo', () => {
   });
 });
 
-describe('backup schema v2: stretch sessions', () => {
-  it('bumps the schema to 2 and exports the stretchSessions table', async () => {
+describe('backup schema v2+: stretch sessions', () => {
+  it('exports the stretchSessions table at the current schema (3 since saved routines)', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     await addStretchSession(session('2026-07-05', ['chin-tuck', 'cat-cow']));
     const backup = await exportBackup();
-    expect(CURRENT_SCHEMA_VERSION).toBe(2);
-    expect(backup.schemaVersion).toBe(2);
+    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+    expect(backup.schemaVersion).toBe(3);
     expect(backup.data.stretchSessions).toHaveLength(1);
   });
 
@@ -94,10 +94,11 @@ describe('backup schema v2: stretch sessions', () => {
 
   it('a v1 backup (no stretchSessions) still validates and imports, KEEPING stretch data', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
-    const v2 = await exportBackup();
-    const v1 = structuredClone(v2) as BackupFile;
+    const v3 = await exportBackup();
+    const v1 = structuredClone(v3) as BackupFile;
     v1.schemaVersion = 1;
     delete v1.data.stretchSessions;
+    delete v1.data.savedRoutines;
 
     // A v1 file predates the stretch table, so it says nothing about it: the
     // live stretch log (and streak) must survive the restore.
@@ -113,21 +114,24 @@ describe('backup schema v2: stretch sessions', () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     const v1 = structuredClone(await exportBackup()) as BackupFile;
     delete v1.data.stretchSessions;
+    delete v1.data.savedRoutines;
     const migrated = migrateBackup(v1.data, 1);
     expect(migrated.stretchSessions).toEqual([]);
+    expect(migrated.savedRoutines).toEqual([]);
     expect(migrated.workouts).toEqual(v1.data.workouts);
   });
 
   it('a v2 backup without the stretchSessions array is rejected', async () => {
     await initializeFromOnboarding(lbOnboardingPayload());
     const bad = structuredClone(await exportBackup()) as BackupFile;
+    bad.schemaVersion = 2;
     delete bad.data.stretchSessions;
     expect(() => parseBackupJson(JSON.stringify(bad))).toThrow(BackupValidationError);
   });
 });
 
-describe('IndexedDB upgrade v1 -> v2', () => {
-  it('an existing v1 database opens under v2 with its data intact and the new table empty', async () => {
+describe('IndexedDB upgrade v1 -> current', () => {
+  it('an existing v1 database opens under the current version with its data intact and the new tables empty', async () => {
     db.close();
     await Dexie.delete('five31');
     const old = new Dexie('five31');
@@ -145,9 +149,10 @@ describe('IndexedDB upgrade v1 -> v2', () => {
     old.close();
 
     await db.open();
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(3);
     expect(await db.bodyweight.get('bw1')).toMatchObject({ weight: 180 });
     expect(await db.stretchSessions.count()).toBe(0);
+    expect(await db.savedRoutines.count()).toBe(0);
     await addStretchSession(session('2026-07-05', ['chin-tuck']));
     expect(await listStretchDays()).toEqual(['2026-07-05']);
   });

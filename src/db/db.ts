@@ -8,7 +8,7 @@ import type {
   TmEvent,
   Workout,
 } from '../core/types.ts';
-import type { StretchSession } from '../core/stretch/types.ts';
+import type { SavedRoutine, StretchSession } from '../core/stretch/types.ts';
 
 /**
  * The FIVE31 IndexedDB database.
@@ -24,6 +24,9 @@ import type { StretchSession } from '../core/stretch/types.ts';
  *
  * Version 2 adds (v1 is kept verbatim so existing installs upgrade in place):
  *   stretchSessions:'id, date'
+ *
+ * Version 3 adds (v1 and v2 kept verbatim):
+ *   savedRoutines:'id, createdAt'
  */
 export class Five31DB extends Dexie {
   settings!: EntityTable<Settings, 'id'>;
@@ -34,6 +37,7 @@ export class Five31DB extends Dexie {
   bodyweight!: EntityTable<BodyweightEntry, 'id'>;
   tmEvents!: EntityTable<TmEvent, 'id'>;
   stretchSessions!: EntityTable<StretchSession, 'id'>;
+  savedRoutines!: EntityTable<SavedRoutine, 'id'>;
 
   constructor() {
     super('five31');
@@ -49,6 +53,10 @@ export class Five31DB extends Dexie {
     // Additive: Dexie carries every v1 table forward unchanged.
     this.version(2).stores({
       stretchSessions: 'id, date',
+    });
+    // Additive again: every v2 table carries forward unchanged.
+    this.version(3).stores({
+      savedRoutines: 'id, createdAt',
     });
   }
 }

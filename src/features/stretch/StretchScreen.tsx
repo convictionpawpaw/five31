@@ -5,16 +5,27 @@ import {
   BODY_AREAS,
   BODY_AREA_LABELS,
   type BodyArea,
+  type Reps,
   type Routine,
+  type SavedRoutine,
 } from '../../core/stretch/types.ts';
 import { generateRoutine, MAX_MINUTES, MIN_MINUTES } from '../../core/stretch/generator.ts';
 import { getStretch } from '../../core/stretch/library.ts';
 import { matchAreas } from '../../core/stretch/matchAreas.ts';
 import { computeStreak } from '../../core/stretch/streak.ts';
-import { listStretchSessions, recentStretchIds } from '../../db/repo/index.ts';
-import { Button, HudPanel } from '../../components/index.ts';
+import { addSavedRoutine, listStretchSessions, recentStretchIds } from '../../db/repo/index.ts';
+import { Button, HudPanel, useToast } from '../../components/index.ts';
 import { StretchFigure } from './StretchFigure.tsx';
 import { StreakPanel } from './StreakPanel.tsx';
+import { SavedRoutinesPanel } from './SavedRoutinesPanel.tsx';
+import { RoutineNameModal } from './RoutineNameModal.tsx';
+import {
+  NECK_BACK_CHEST,
+  defaultRoutineName,
+  distinctStretchCount,
+  missingStretchIds,
+  stepRuns,
+} from './routineFormat.ts';
 import { loadStretchPrefs, saveStretchPrefs } from './stretchPrefs.ts';
 import { unlockAudio } from './stretchAudio.ts';
 import { armAutostart } from './playerLaunch.ts';
@@ -22,9 +33,8 @@ import { useToday } from './useToday.ts';
 import { fmtClock } from './stretchFormat.ts';
 import './stretch.css';
 
-/** One-tap preset for the owner's main aim: daily neck and back work. */
-const NECK_BACK_CHEST: BodyArea[] = ['neck', 'upperBack', 'lowerBack', 'chest'];
 const DURATIONS = Array.from({ length: MAX_MINUTES - MIN_MINUTES + 1 }, (_, i) => MIN_MINUTES + i);
+const REPEATS: readonly Reps[] = [1, 2, 3];
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 0x7fffffff);
@@ -38,41 +48,50 @@ async function readStretch() {
 /** Router state handed to the player. */
 export interface StretchPlayState {
   routine: Routine;
+  /** Started from a saved routine (the completion view then offers no Save). */
+  fromSaved?: boolean;
 }
 
 /**
- * Stretch home: streak HUD, routine builder (duration, focus chips, free-text
- * matching, presets), a preview of the generated routine and Start.
+ * Stretch home: streak HUD, routine builder (duration, repeats, focus chips,
+ * free-text matching, presets), a preview of the generated routine with
+ * Shuffle / Save / Start, and the saved routines.
  */
 export function StretchScreen() {
   const navigate = useNavigate();
+  const toast = useToast();
   const data = useLiveQuery(readStretch, []);
   const [prefs] = useState(loadStretchPrefs);
   const [minutes, setMinutes] = useState(prefs.minutes);
+  const [reps, setReps] = useState<Reps>(prefs.reps);
   const [focus, setFocus] = useState<BodyArea[]>(prefs.focusAreas);
   const [seed, setSeed] = useState(randomSeed);
   const [text, setText] = useState('');
   const [matchMsg, setMatchMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const recent = data?.recent;
   const routine = useMemo(
     () =>
       recent === undefined
         ? null
-        : generateRoutine({ minutes, focusAreas: focus, seed, recentStretchIds: recent }),
-    [minutes, focus, seed, recent],
+        : generateRoutine({ minutes, focusAreas: focus, seed, reps, recentStretchIds: recent }),
+    [minutes, focus, seed, reps, recent],
   );
 
   const today = useToday();
   const streak = useMemo(() => (data ? computeStreak(data.sessions, today) : null), [data, today]);
   // Areas the generator could not fit in the chosen time. Optional on Routine,
   // so read defensively.
-  const dropped: BodyArea[] =
-    (routine as (Routine & { droppedAreas?: BodyArea[] }) | null)?.droppedAreas ?? [];
+  const dropped: BodyArea[] = routine?.droppedAreas ?? [];
 
   const chooseMinutes = (m: number) => {
     setMinutes(m);
     saveStretchPrefs({ minutes: m });
+  };
+  const chooseReps = (r: Reps) => {
+    setReps(r);
+    saveStretchPrefs({ reps: r });
   };
   const chooseFocus = (areas: BodyArea[]) => {
     const ordered = BODY_AREAS.filter((a) => areas.includes(a));
@@ -99,19 +118,32 @@ export function StretchScreen() {
     setMatchMsg({ ok: true, text: `Focus: ${areas.map((a) => BODY_AREA_LABELS[a]).join(', ')}` });
   };
 
-  const start = () => {
-    if (!routine) return;
+  /** The one launch path (Start and saved routines); must run inside the tap. */
+  const launch = (r: Routine, fromSaved: boolean) => {
     // Created inside the tap so iOS allows the player's audio cues.
     unlockAudio();
     // One-shot token: the player auto-starts only when mounted from this tap.
     armAutostart();
-    const state: StretchPlayState = { routine };
+    const state: StretchPlayState = fromSaved ? { routine: r, fromSaved } : { routine: r };
     navigate('/stretch/play', { state });
+  };
+  const start = () => {
+    if (routine) launch(routine, false);
+  };
+  const startSaved = (saved: SavedRoutine) => {
+    if (saved.routine.steps.length === 0 || missingStretchIds(saved.routine).length > 0) {
+      toast.show(
+        'This routine uses a stretch that is no longer in the app, so it cannot start.',
+        'danger',
+      );
+      return;
+    }
+    launch(saved.routine, true);
   };
 
   const presetActive =
     focus.length === NECK_BACK_CHEST.length && NECK_BACK_CHEST.every((a) => focus.includes(a));
-  const stretchCount = routine ? new Set(routine.steps.map((s) => s.stretchId)).size : 0;
+  const stretchCount = routine ? distinctStretchCount(routine) : 0;
 
   return (
     <div className="stretch safe-top">
@@ -143,6 +175,24 @@ export function StretchScreen() {
                 onClick={() => chooseMinutes(m)}
               >
                 {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="stretch__field">
+          <span className="label">Repeats</span>
+          <div className="stretch__durations stretch__repeats" role="group" aria-label="Repeats">
+            {REPEATS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className={`stretch__seg num${r === reps ? ' is-on' : ''}`}
+                aria-pressed={r === reps}
+                aria-label={`Each stretch ${r === 1 ? 'once' : `${r} times`}`}
+                onClick={() => chooseReps(r)}
+              >
+                {r}x
               </button>
             ))}
           </div>
@@ -196,7 +246,7 @@ export function StretchScreen() {
               className={`stretch__chip stretch__chip--preset${presetActive ? ' is-on' : ''}`}
               aria-pressed={presetActive}
               onClick={() => {
-                chooseFocus(NECK_BACK_CHEST);
+                chooseFocus([...NECK_BACK_CHEST]);
                 setMatchMsg(null);
               }}
             >
@@ -233,19 +283,26 @@ export function StretchScreen() {
               </p>
             )}
             <ol className="stretch__steps">
-              {routine.steps.map((st, i) => {
-                const s = getStretch(st.stretchId);
+              {stepRuns(routine.steps).map((run) => {
+                const s = getStretch(run.stretchId);
                 if (!s) return null;
+                const tags = [run.bilateral ? 'L/R' : '', run.repOf > 1 ? `×${run.repOf}` : '']
+                  .filter(Boolean)
+                  .join(' ');
+                const spoken = [
+                  run.bilateral ? 'each side' : '',
+                  run.repOf > 1 ? `${run.repOf} times` : '',
+                ]
+                  .filter(Boolean)
+                  .join(', ');
                 return (
-                  <li key={i} className="stretch__step">
-                    <StretchFigure
-                      pose={s.pose}
-                      mirrored={st.side === 'right'}
-                      className="stretch__thumb"
-                    />
+                  <li key={run.firstStep} className="stretch__step">
+                    <StretchFigure pose={s.pose} className="stretch__thumb" />
                     <span className="stretch__step-name">{s.name}</span>
-                    {st.side && <span className="label stretch__side">{st.side}</span>}
-                    <span className="num stretch__step-sec">{st.holdSec}s</span>
+                    <span className="label stretch__side" aria-label={spoken || undefined}>
+                      {tags}
+                    </span>
+                    <span className="num stretch__step-sec">{run.holdSec}s</span>
                   </li>
                 );
               })}
@@ -254,15 +311,33 @@ export function StretchScreen() {
               <Button variant="ghost" onClick={() => setSeed(randomSeed())}>
                 Shuffle
               </Button>
+              <Button variant="ghost" onClick={() => setSaving(true)}>
+                Save
+              </Button>
               <Button variant="primary" block onClick={start}>
                 Start
               </Button>
             </div>
+            {saving && (
+              <RoutineNameModal
+                title="Save routine"
+                initialName={defaultRoutineName(routine)}
+                confirmLabel="Save"
+                onClose={() => setSaving(false)}
+                onSubmit={async (name) => {
+                  await addSavedRoutine(name, routine);
+                  setSaving(false);
+                  toast.show('Routine saved', 'success');
+                }}
+              />
+            )}
           </>
         ) : (
           <p className="label text-low">Loading…</p>
         )}
       </HudPanel>
+
+      <SavedRoutinesPanel onStart={startSaved} />
 
       <p className="stretch__disclaimer">
         General flexibility guidance, not medical advice. Stop any stretch that causes pain.

@@ -7,6 +7,7 @@ import { getSettings } from '../repo/settingsRepo.ts';
 import { startSlSession } from '../repo/slRepo.ts';
 import { finishWorkout, logMainSet, startWorkout } from '../repo/workoutRepo.ts';
 import { exportBackup, importBackup, parseBackupJson } from '../exportImport.ts';
+import { CURRENT_SCHEMA_VERSION } from '../migrations.ts';
 import { db } from '../db.ts';
 import type { BackupFile } from '../../core/types.ts';
 
@@ -140,20 +141,21 @@ describe('export / import with StrongLifts data', () => {
     expect(squatS2.mainSets).toHaveLength(5);
   });
 
-  // StrongLifts itself needed NO migration; the version is 2 only because the
-  // Stretch feature added the stretchSessions table.
+  // StrongLifts itself needed NO migration; the version is past 1 only because the
+  // Stretch feature added the stretchSessions and savedRoutines tables.
   it('stamps the current schemaVersion with no StrongLifts-specific tables', async () => {
     const block = await seedSlBlock();
     await playSession(block.id, 1);
     const backup = await exportBackup();
     expect(backup.app).toBe('five31');
-    expect(backup.schemaVersion).toBe(2);
+    expect(backup.schemaVersion).toBe(3);
     expect(Object.keys(backup.data).sort()).toEqual(
       [
         'accessories',
         'bodyweight',
         'cycles',
         'liftState',
+        'savedRoutines',
         'settings',
         'stretchSessions',
         'tmEvents',
@@ -202,7 +204,7 @@ describe('export / import with StrongLifts data', () => {
   it('re-exports a legacy import byte-for-byte identically', async () => {
     await importBackup(structuredClone(LEGACY_V1_BACKUP));
     const re = await exportBackup();
-    expect(re.schemaVersion).toBe(2);
+    expect(re.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(re.data.settings).toEqual(LEGACY_V1_BACKUP.data.settings);
     expect(re.data.cycles).toEqual(LEGACY_V1_BACKUP.data.cycles);
     expect(re.data.workouts).toEqual(LEGACY_V1_BACKUP.data.workouts);

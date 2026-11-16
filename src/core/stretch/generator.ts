@@ -4,6 +4,7 @@ import {
   FLOOR_POSTURE_ORDER,
   POSITION_ORDER,
   type BodyArea,
+  type Reps,
   type Routine,
   type RoutineStep,
   type Stretch,
@@ -56,6 +57,22 @@ import {
  *   6. Order by position (standing → seated → kneeling → floor), the floor
  *      block by posture (sitting → supine → side-lying → prone), then pick
  *      order; bilateral stretches emit left then right.
+ *
+ * Reps ({@link GenerateOptions.reps}, default 2): every rep of a stretch is
+ * done back to back (unilateral: hold, hold; bilateral: L, R, L, R) at the
+ * same hold, and the hold caps apply per rep. Coverage comes first: the
+ * mandatory pass (3) picks one stretch per area as at reps = 1 (its
+ * prefer-one-sided swap counts the planned reps, so at 2x/3x it may pick a
+ * different stretch for the SAME area), and its drop pass always works at one
+ * rep, so exactly the same areas are covered or dropped. During the fill (4), whenever another
+ * rep of an already chosen stretch still fits at minimum holds it is added
+ * BEFORE any new stretch: focus/core primary-area stretches first, then their
+ * other main-bucket picks, then complements; among those, the stretch with
+ * the fewest reps so far (so areas stay level), then seeded. A new stretch
+ * enters with one rep and is offered its further reps on the next turns.
+ * {@link Stretch.continuous} movements (cat-cow) never get a second rep. With
+ * reps = 1 no rep is ever offered, so the output is today's routine exactly
+ * (steps carry no rep fields).
  */
 
 /** Seconds before every step (lead-in for the first, transition otherwise). */
@@ -127,6 +144,16 @@ export interface GenerateOptions {
   recentStretchIds?: readonly string[];
   /** Override the library (tests). */
   library?: readonly Stretch[];
+  /** Reps per stretch, back to back; default {@link DEFAULT_REPS}. */
+  reps?: Reps;
+}
+
+/** Reps used when none (or an invalid value) is requested. */
+export const DEFAULT_REPS: Reps = 2;
+
+/** Anything → a valid rep count (1, 2 or 3); otherwise {@link DEFAULT_REPS}. */
+export function clampReps(reps: unknown): Reps {
+  return reps === 1 || reps === 2 || reps === 3 ? reps : DEFAULT_REPS;
 }
 
 /** mulberry32: tiny, fast, well-distributed seeded PRNG returning [0, 1). */
@@ -198,6 +225,7 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   const focusSet = new Set<BodyArea>(focus);
   const recent = new Set(opts.recentStretchIds ?? []);
   const seed = Number.isFinite(opts.seed) ? opts.seed : 0;
+  const repsWanted = clampReps(opts.reps);
 
   // One jitter value per library stretch, drawn in library order, so the
   // random stream does not depend on the order picks happen in. Every other
@@ -329,21 +357,27 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   const used = new Set<string>();
   let pickCounter = 0;
   const pickIndex = new Map<string, number>();
+  /** Reps per chosen stretch (1 until the fill adds more). */
+  const repsOf = new Map<string, number>();
   const choose = (b: Bucket, s: Stretch) => {
     b.chosen.push(s);
     used.add(s.id);
     pickIndex.set(s.id, pickCounter++);
+    repsOf.set(s.id, 1);
   };
+  /** Timed steps a chosen stretch produces: sides x reps. */
+  const stepsOf = (s: Stretch) => stepCount(s) * (repsOf.get(s.id) ?? 1);
   const next = (b: Bucket): Stretch | undefined =>
     b.dropped ? undefined : b.order.find((s) => !used.has(s.id));
 
   const sumOver = (f: (s: Stretch) => number, bs: readonly Bucket[] = buckets) =>
     bs.reduce((n, b) => n + b.chosen.reduce((m, s) => m + f(s), 0), 0);
-  const steps = () => sumOver(stepCount);
-  const minHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepCount(s) * MIN_HOLD_SEC, bs);
-  const maxHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepCount(s) * holdCap(s), bs);
-  const nomHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepCount(s) * nominalHold(s), bs);
-  const cost = (s: Stretch, hold: number) => stepCount(s) * (hold + TRANSITION_SEC);
+  const steps = () => sumOver(stepsOf);
+  const minHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepsOf(s) * MIN_HOLD_SEC, bs);
+  const maxHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepsOf(s) * holdCap(s), bs);
+  const nomHolds = (bs?: readonly Bucket[]) => sumOver((s) => stepsOf(s) * nominalHold(s), bs);
+  // Every rep of a stretch shares its hold, so a stretch costs steps x (hold + transition).
+  const cost = (s: Stretch, hold: number) => stepsOf(s) * (hold + TRANSITION_SEC);
 
   // --- 2. Mandatory pass: one stretch per main bucket -------------------------
   for (const b of main) {
@@ -372,9 +406,15 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   const byCostThenRand = (hold: (s: Stretch) => number) => (x: Bucket, y: Bucket) =>
     cost(pickOf(y), hold(pickOf(y))) - cost(pickOf(x), hold(pickOf(x))) || x.rand - y.rand;
 
-  // Too long at nominal holds: prefer shorter (unilateral) primary picks.
+  // Too long at nominal holds (counting the reps each pick is meant to get):
+  // prefer shorter (unilateral) primary picks. Same areas, so coverage and
+  // the drop pass below (always at one rep) are unchanged by reps.
+  const plannedReps = (s: Stretch) => (s.continuous ? 1 : repsWanted);
   for (;;) {
-    const total = live().reduce((n, b) => n + cost(pickOf(b), nominalHold(pickOf(b))), 0);
+    const total = live().reduce(
+      (n, b) => n + plannedReps(pickOf(b)) * cost(pickOf(b), nominalHold(pickOf(b))),
+      0,
+    );
     if (total <= target) break;
     const cands = live()
       .filter((b) => pickOf(b).bilateral && unilateralAlt(b, false))
@@ -431,10 +471,76 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   /** Prefer the candidate whose size best fits the gap, then the preferred one. */
   const byFit = (gap: (o: Option) => number) => (x: Option, y: Option) =>
     Math.abs(gap(x) - x.size) - Math.abs(gap(y) - y.size) || x.alt - y.alt;
-  for (let guard = 0; guard < library.length + 1; guard++) {
+  /** Main buckets whose continuous pick has already been given a companion. */
+  const companioned = new Set<Bucket>();
+  for (let guard = 0; guard < library.length * (repsWanted + 1) + 1; guard++) {
     const H = target - TRANSITION_SEC * steps();
     const t = targets(H);
     const minNow = minHolds();
+
+    // Reps before new stretches: another rep of a chosen stretch whenever one
+    // still fits at minimum holds. A continuous movement (cat-cow) never gets
+    // one; if it is a focus/core area's pick, that area instead gets a
+    // "companion": its next repeatable stretch, so it is not left behind.
+    if (repsWanted > 1) {
+      interface RepCand {
+        b: Bucket;
+        s: Stretch;
+        /** 0: focus/core primary-area pick; 1: other main-bucket pick; 2: complement. */
+        rank: number;
+        r: number;
+        /** The bucket's nominal hold seconds so far (lowest first keeps areas level). */
+        area: number;
+        /** Set when the action is choosing this companion rather than adding a rep. */
+        companion?: Stretch;
+      }
+      const repCands: RepCand[] = [];
+      const fitsSteps = (k: number) => minNow + k * MIN_HOLD_SEC <= H - k * TRANSITION_SEC;
+      for (const b of buckets) {
+        for (const s of b.chosen) {
+          const r = repsOf.get(s.id) ?? 1;
+          const rank = b.area === null ? 2 : b.tier.get(s.id) === 0 ? 0 : 1;
+          if (s.continuous) {
+            // Only when it is all the area has: otherwise the area already has
+            // a repeatable stretch and is no worse off than any other.
+            const alone = b.chosen.every((x) => x.continuous);
+            if (b.area === null || !alone || companioned.has(b) || r >= repsWanted) continue;
+            const tier = b.tier.get(s.id);
+            const free = (x: Stretch) => !used.has(x.id) && !x.continuous;
+            const sameTier = (x: Stretch) => free(x) && b.tier.get(x.id) === tier;
+            // One-sided first: its reps then roughly match one rep of the others.
+            const c =
+              b.order.find((x) => sameTier(x) && !x.bilateral) ??
+              b.order.find(sameTier) ??
+              b.order.find(free);
+            if (c && fitsSteps(stepCount(c))) {
+              repCands.push({ b, s, rank, r, area: nomHolds([b]), companion: c });
+            }
+            continue;
+          }
+          if (r >= repsWanted || !fitsSteps(stepCount(s))) continue;
+          repCands.push({ b, s, rank, r, area: nomHolds([b]) });
+        }
+      }
+      if (repCands.length > 0) {
+        repCands.sort(
+          (x, y) =>
+            x.rank - y.rank ||
+            x.area - y.area ||
+            x.r - y.r ||
+            x.b.rand - y.b.rand ||
+            (jitter.get(y.s.id) ?? 0) - (jitter.get(x.s.id) ?? 0),
+        );
+        const top = repCands[0]!;
+        if (top.companion) {
+          companioned.add(top.b);
+          choose(top.b, top.companion);
+        } else {
+          repsOf.set(top.s.id, top.r + 1);
+        }
+        continue;
+      }
+    }
     const options: Option[] = [];
     for (const b of buckets) {
       const first = next(b);
@@ -455,12 +561,16 @@ export function generateRoutine(opts: GenerateOptions): Routine {
       cands.forEach((s, alt) => {
         const k = stepCount(s);
         if (minNow + k * MIN_HOLD_SEC > H - k * TRANSITION_SEC) return; // would overrun
+        // A new stretch is sized at the reps it will get right after (it
+        // enters with one and the rep pass adds the rest while they fit), so
+        // the fill does not overfill a bucket and then squeeze every hold.
+        const planned = k * (s.continuous ? 1 : repsWanted);
         options.push({
           b,
           s,
           deficit: tb - nomHolds([b]),
           need: tb - maxHolds([b]),
-          size: k * nominalHold(s),
+          size: planned * nominalHold(s),
           fits: minHolds([b]) + k * MIN_HOLD_SEC <= tb,
           alt,
         });
@@ -545,7 +655,7 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   const real = new Map<string, number>();
   for (const [b, want] of alloc) {
     const hold = (s: Stretch, f: number) => clamp(nominalHold(s) * f, MIN_HOLD_SEC, holdCap(s));
-    const fill = (f: number) => b.chosen.reduce((n, s) => n + stepCount(s) * hold(s, f), 0);
+    const fill = (f: number) => b.chosen.reduce((n, s) => n + stepsOf(s) * hold(s, f), 0);
     const f = solve(fill, want, 10);
     for (const s of b.chosen) real.set(s.id, hold(s, f));
   }
@@ -561,7 +671,7 @@ export function generateRoutine(opts: GenerateOptions): Routine {
     let bestErr = -Infinity;
     for (const s of picked) {
       const h = holdOf.get(s.id)!;
-      if (stepCount(s) > Math.abs(diff)) continue;
+      if (stepsOf(s) > Math.abs(diff)) continue;
       if (dirn > 0 ? h >= holdCap(s) : h <= MIN_HOLD_SEC) continue;
       const err = dirn * ((real.get(s.id) ?? h) - h);
       if (err > bestErr) {
@@ -571,7 +681,7 @@ export function generateRoutine(opts: GenerateOptions): Routine {
     }
     if (!best) break;
     holdOf.set(best.id, holdOf.get(best.id)! + dirn);
-    diff -= dirn * stepCount(best);
+    diff -= dirn * stepsOf(best);
   }
 
   // --- 5. Order and emit -----------------------------------------------------------
@@ -587,11 +697,16 @@ export function generateRoutine(opts: GenerateOptions): Routine {
   const out: RoutineStep[] = [];
   for (const s of ordered) {
     const holdSec = holdOf.get(s.id)!;
-    if (s.bilateral) {
-      out.push({ stretchId: s.id, side: 'left', holdSec });
-      out.push({ stretchId: s.id, side: 'right', holdSec });
-    } else {
-      out.push({ stretchId: s.id, holdSec });
+    const repOf = repsOf.get(s.id) ?? 1;
+    for (let rep = 1; rep <= repOf; rep++) {
+      // Rep fields only on repeated stretches, so a single stays as before.
+      const r = repOf > 1 ? { rep, repOf } : {};
+      if (s.bilateral) {
+        out.push({ stretchId: s.id, side: 'left', holdSec, ...r });
+        out.push({ stretchId: s.id, side: 'right', holdSec, ...r });
+      } else {
+        out.push({ stretchId: s.id, holdSec, ...r });
+      }
     }
   }
 
@@ -599,6 +714,7 @@ export function generateRoutine(opts: GenerateOptions): Routine {
     minutes,
     focusAreas: focus,
     seed: opts.seed,
+    reps: repsWanted,
     steps: out,
     totalSec: routineSeconds(out),
     droppedAreas: main.filter((b) => b.dropped && focus.length > 0).map((b) => b.area!),

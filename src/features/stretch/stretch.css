@@ -206,6 +206,9 @@
   color: var(--bg-0);
   background: var(--amber);
 }
+.stretch__repeats {
+  grid-template-columns: repeat(3, 1fr);
+}
 .stretch__textrow {
   display: flex;
   gap: var(--space-2);
@@ -311,6 +314,76 @@
 .stretch__actions .btn--primary {
   min-height: 56px;
   font-size: var(--fs-md);
+}
+
+/* --- Saved routines ------------------------------------------------------------------ */
+.sroutine__list {
+  display: flex;
+  flex-direction: column;
+}
+.sroutine__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+}
+.sroutine__item + .sroutine__item {
+  border-top: 1px solid var(--line);
+}
+.sroutine__name {
+  align-self: flex-start;
+  min-height: 32px;
+  text-align: left;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+}
+.sroutine__meta {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.sroutine__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--space-3);
+  list-style: decimal;
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+}
+.sroutine__actions {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: var(--space-2);
+}
+.sroutine__actions .btn {
+  padding: 0 var(--space-2);
+}
+.sroutine__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.sroutine__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-low);
+}
+.sroutine__hint.text-amber {
+  color: var(--amber);
+}
+.sroutine__hint.text-danger {
+  color: var(--danger);
+}
+.splayer__rep {
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+}
+.splayer__tags {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
 }
 
 /* --- Today panel link -------------------------------------------------------------- */
@@ -473,6 +546,36 @@ body.stretch-playing .app-content {
 }
 .splayer__figure {
   max-width: 340px;
+}
+/* Motion cues during a running hold: the arrow dashes march the way to move
+   and the stretched region breathes. Player figure only, never thumbnails. */
+.splayer__figure.is-live .sfig__arrow {
+  animation: sfig-march 900ms linear infinite;
+}
+.splayer__figure.is-live .sfig__hl,
+.splayer__figure.is-live .sfig__head--hl {
+  animation: sfig-breathe 4s ease-in-out infinite;
+}
+@keyframes sfig-march {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+@keyframes sfig-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splayer__figure.is-live .sfig__arrow,
+  .splayer__figure.is-live .sfig__hl,
+  .splayer__figure.is-live .sfig__head--hl {
+    animation: none;
+  }
 }
 .splayer__name-row {
   display: flex;

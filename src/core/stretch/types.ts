@@ -100,15 +100,30 @@ export interface Stretch {
   cues: string[];
   /** Key into POSES for the illustration. */
   pose: string;
+  /**
+   * A movement that is already a set of repetitions (e.g. cat-cow). Never
+   * repeated as a block: it always stays one step.
+   */
+  continuous?: true;
 }
 
 export type Side = 'left' | 'right';
 
-/** One timed step of a routine. A bilateral stretch yields two steps. */
+/** How many times each stretch is done, back to back. */
+export type Reps = 1 | 2 | 3;
+
+/**
+ * One timed step of a routine. A bilateral stretch yields two steps per rep
+ * (left, right), and all reps of a stretch are adjacent: L, R, L, R.
+ */
 export interface RoutineStep {
   stretchId: string;
   side?: Side;
   holdSec: number;
+  /** 1-based rep number; absent for a stretch done once. */
+  rep?: number;
+  /** How many reps this stretch gets; absent (or 1) for a stretch done once. */
+  repOf?: number;
 }
 
 /** A generated routine. */
@@ -118,6 +133,12 @@ export interface Routine {
   /** Focus areas it was built for; empty means well-rounded. */
   focusAreas: BodyArea[];
   seed: number;
+  /**
+   * Reps requested (most stretches get this many; some get fewer when time
+   * is short, continuous ones always one). Optional only so routines made
+   * before reps existed still type-check; absent means 1.
+   */
+  reps?: Reps;
   steps: RoutineStep[];
   /** Planned length in seconds: holds plus one transition per step. */
   totalSec: number;
@@ -149,4 +170,18 @@ export interface StretchSession {
   focusAreas: BodyArea[];
   /** Unique stretch ids in the order performed. */
   stretchIds: string[];
+}
+
+/** A routine the user saved by name; replays exactly as saved. */
+export interface SavedRoutine {
+  /** ULID. */
+  id: string;
+  /** Trimmed, 1 to 40 characters; duplicates allowed. */
+  name: string;
+  /** Epoch ms. */
+  createdAt: number;
+  /** Epoch ms; changes on rename. */
+  updatedAt: number;
+  /** The full routine snapshot (steps and holds), played back verbatim. */
+  routine: Routine;
 }

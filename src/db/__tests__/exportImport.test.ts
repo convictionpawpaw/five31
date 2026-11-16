@@ -17,17 +17,27 @@ beforeEach(resetDb);
 
 /** Read every table into a plain object for deep comparison. */
 async function snapshotAllTables() {
-  const [settings, liftState, cycles, workouts, accessories, bodyweight, tmEvents, stretchSessions] =
-    await Promise.all([
-      db.settings.toArray(),
-      db.liftState.toArray(),
-      db.cycles.toArray(),
-      db.workouts.toArray(),
-      db.accessories.toArray(),
-      db.bodyweight.toArray(),
-      db.tmEvents.toArray(),
-      db.stretchSessions.toArray(),
-    ]);
+  const [
+    settings,
+    liftState,
+    cycles,
+    workouts,
+    accessories,
+    bodyweight,
+    tmEvents,
+    stretchSessions,
+    savedRoutines,
+  ] = await Promise.all([
+    db.settings.toArray(),
+    db.liftState.toArray(),
+    db.cycles.toArray(),
+    db.workouts.toArray(),
+    db.accessories.toArray(),
+    db.bodyweight.toArray(),
+    db.tmEvents.toArray(),
+    db.stretchSessions.toArray(),
+    db.savedRoutines.toArray(),
+  ]);
   const sortById = <T extends { id?: string; liftId?: string }>(rows: T[]) =>
     [...rows].sort((a, b) => String(a.id ?? a.liftId).localeCompare(String(b.id ?? b.liftId)));
   return {
@@ -39,6 +49,7 @@ async function snapshotAllTables() {
     bodyweight: sortById(bodyweight),
     tmEvents: sortById(tmEvents),
     stretchSessions: sortById(stretchSessions),
+    savedRoutines: sortById(savedRoutines),
   };
 }
 
@@ -77,17 +88,18 @@ describe('export / import', () => {
     expect(after).toEqual(before);
   });
 
-  it('export includes all 8 tables with the app + schemaVersion header', async () => {
+  it('export includes all 9 tables with the app + schemaVersion header', async () => {
     await seedRichState();
     const backup = await exportBackup();
     expect(backup.app).toBe('five31');
-    expect(backup.schemaVersion).toBe(2);
+    expect(backup.schemaVersion).toBe(3);
     expect(Object.keys(backup.data).sort()).toEqual(
       [
         'accessories',
         'bodyweight',
         'cycles',
         'liftState',
+        'savedRoutines',
         'settings',
         'stretchSessions',
         'tmEvents',

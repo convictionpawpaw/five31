@@ -4,7 +4,7 @@ import type { BackupFile } from '../core/types.ts';
  * The schema version the running app writes and understands. Bump this whenever
  * the on-disk shape changes and add a corresponding step to {@link BACKUP_MIGRATIONS}.
  */
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 /**
  * The mutable payload carried through the migration stepper. It is the `data`
@@ -28,9 +28,11 @@ export type MigrationStep = (data: BackupData) => BackupData;
  *
  * v1 is the first schema, so there is no v0→v1 step.
  *   1 → 2: adds the (empty) `stretchSessions` table.
+ *   2 → 3: adds the (empty) `savedRoutines` table.
  */
 export const BACKUP_MIGRATIONS: Record<number, MigrationStep> = {
   1: (data) => ({ ...data, stretchSessions: data.stretchSessions ?? [] }),
+  2: (data) => ({ ...data, savedRoutines: data.savedRoutines ?? [] }),
 };
 
 /**

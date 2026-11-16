@@ -19,6 +19,7 @@ export async function resetDb(): Promise<void> {
     db.bodyweight.clear(),
     db.tmEvents.clear(),
     db.stretchSessions.clear(),
+    db.savedRoutines.clear(),
   ]);
 }
 

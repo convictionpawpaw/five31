@@ -8,24 +8,37 @@ export const BACKUP_APP = 'five31' as const;
 /** The first backup schemaVersion that carries the `stretchSessions` table. */
 export const STRETCH_SESSIONS_SINCE = 2;
 
+/** The first backup schemaVersion that carries the `savedRoutines` table. */
+export const SAVED_ROUTINES_SINCE = 3;
+
 /**
- * Serialize the entire database into a portable backup object (all 8 tables).
+ * Serialize the entire database into a portable backup object (all 9 tables).
  * Pure read — no mutation.
  */
 export async function exportBackup(): Promise<BackupFile> {
-  const [settings, liftState, cycles, workouts, accessories, bodyweight, tmEvents, stretchSessions] =
-    await db.transaction('r', allTables(), async () => {
-      return Promise.all([
-        db.settings.toArray(),
-        db.liftState.toArray(),
-        db.cycles.toArray(),
-        db.workouts.toArray(),
-        db.accessories.toArray(),
-        db.bodyweight.toArray(),
-        db.tmEvents.toArray(),
-        db.stretchSessions.toArray(),
-      ]);
-    });
+  const [
+    settings,
+    liftState,
+    cycles,
+    workouts,
+    accessories,
+    bodyweight,
+    tmEvents,
+    stretchSessions,
+    savedRoutines,
+  ] = await db.transaction('r', allTables(), async () => {
+    return Promise.all([
+      db.settings.toArray(),
+      db.liftState.toArray(),
+      db.cycles.toArray(),
+      db.workouts.toArray(),
+      db.accessories.toArray(),
+      db.bodyweight.toArray(),
+      db.tmEvents.toArray(),
+      db.stretchSessions.toArray(),
+      db.savedRoutines.toArray(),
+    ]);
+  });
 
   return {
     app: BACKUP_APP,
@@ -40,6 +53,7 @@ export async function exportBackup(): Promise<BackupFile> {
       bodyweight,
       tmEvents,
       stretchSessions,
+      savedRoutines,
     },
   };
 }
@@ -55,6 +69,7 @@ function allTables() {
     db.bodyweight,
     db.tmEvents,
     db.stretchSessions,
+    db.savedRoutines,
   ];
 }
 
@@ -78,7 +93,10 @@ const BACKUP_TABLES = [
 ] as const;
 
 /** Tables added in later schema versions: required only from that version on. */
-const VERSIONED_TABLES = [{ table: 'stretchSessions', since: STRETCH_SESSIONS_SINCE }] as const;
+const VERSIONED_TABLES = [
+  { table: 'stretchSessions', since: STRETCH_SESSIONS_SINCE },
+  { table: 'savedRoutines', since: SAVED_ROUTINES_SINCE },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Per-row structural validation
@@ -202,6 +220,27 @@ const SL_CYCLE_STATE: Shape = {
   },
 };
 
+/** One step of a saved routine (src/core/stretch/types.ts RoutineStep). */
+const ROUTINE_STEP: Shape = {
+  required: { stretchId: str, holdSec: num },
+  optional: { side: oneOf(['left', 'right']), rep: num, repOf: num },
+};
+
+/**
+ * A saved routine's snapshot. The fields the player reads to run and record a
+ * session are required; the rest stay optional. Area names are strings only,
+ * as for stretch sessions.
+ */
+const SAVED_ROUTINE_SNAPSHOT: Shape = {
+  required: {
+    minutes: num,
+    focusAreas: arrayOf(str),
+    steps: arrayOf(shaped(ROUTINE_STEP)),
+    totalSec: num,
+  },
+  optional: { seed: num, reps: num, droppedAreas: arrayOf(str) },
+};
+
 const TABLE_SHAPES: Record<keyof BackupData, Shape> = {
   settings: {
     required: {
@@ -310,6 +349,15 @@ const TABLE_SHAPES: Record<keyof BackupData, Shape> = {
       stretchIds: arrayOf(str),
     },
   },
+  savedRoutines: {
+    required: {
+      id,
+      name: str,
+      createdAt: num,
+      updatedAt: num,
+      routine: shaped(SAVED_ROUTINE_SNAPSHOT),
+    },
+  },
 };
 
 /** The primary-key field of each table, for duplicate-key detection. */
@@ -322,6 +370,7 @@ const PRIMARY_KEYS: Record<keyof BackupData, string> = {
   bodyweight: 'id',
   tmEvents: 'id',
   stretchSessions: 'id',
+  savedRoutines: 'id',
 };
 
 /**
@@ -332,7 +381,7 @@ const PRIMARY_KEYS: Record<keyof BackupData, string> = {
 function validateRows(data: BackupData): void {
   for (const table of Object.keys(TABLE_SHAPES) as (keyof BackupData)[]) {
     const rows = data[table];
-    if (rows === undefined) continue; // only stretchSessions may be absent (pre-v2)
+    if (rows === undefined) continue; // only versioned tables may be absent (older files)
     if (!Array.isArray(rows)) {
       throw new BackupValidationError(`Backup is missing the '${table}' array.`);
     }
@@ -388,7 +437,7 @@ function validateRows(data: BackupData): void {
  * Validate that an unknown value is a well-formed FIVE31 backup: the `five31`
  * discriminator, an integer schemaVersion between 1 and the app's, a `data`
  * object whose seven core tables are all arrays (plus `stretchSessions` from
- * schemaVersion 2), and, AFTER migrating a copy to the current shape, every row
+ * schemaVersion 2 and `savedRoutines` from 3), and, AFTER migrating a copy to the current shape, every row
  * of every table structurally valid. Throws {@link BackupValidationError} on any
  * failure. Pure (no DB access), so it runs before any mutation. Returns the
  * value narrowed to {@link BackupFile}.
@@ -455,18 +504,29 @@ export function stretchImportPlan(file: BackupFile): StretchImportPlan {
 }
 
 /**
+ * Same rule for saved routines: a file older than the table (schemaVersion
+ * < 3) KEEPS the routines on this device; a v3+ file replaces them.
+ */
+export function savedRoutinesImportPlan(file: BackupFile): StretchImportPlan {
+  if (file.schemaVersion < SAVED_ROUTINES_SINCE) return { mode: 'kept' };
+  return { mode: 'replaced', count: file.data.savedRoutines?.length ?? 0 };
+}
+
+/**
  * Replace the database from a backup file. Validates everything (header, then
  * every row of the migrated payload) BEFORE any mutation, then in ONE
  * transaction clears and bulk-adds each table. All-or-nothing.
  *
  * Stretch sessions: a backup that predates the table (schemaVersion < 2) leaves
- * the existing stretch log untouched; a v2+ backup replaces it.
+ * the existing stretch log untouched; a v2+ backup replaces it. Saved routines
+ * likewise: kept for a file below schemaVersion 3, replaced from v3.
  */
 export async function importBackup(file: BackupFile): Promise<void> {
   validateBackup(file);
 
   const data = migrateOrReject(file);
   const replaceStretch = stretchImportPlan(file).mode === 'replaced';
+  const replaceSaved = savedRoutinesImportPlan(file).mode === 'replaced';
 
   await db.transaction('rw', allTables(), async () => {
     await Promise.all([
@@ -478,6 +538,7 @@ export async function importBackup(file: BackupFile): Promise<void> {
       db.bodyweight.clear(),
       db.tmEvents.clear(),
       replaceStretch ? db.stretchSessions.clear() : Promise.resolve(),
+      replaceSaved ? db.savedRoutines.clear() : Promise.resolve(),
     ]);
     await Promise.all([
       db.settings.bulkAdd(data.settings),
@@ -488,6 +549,7 @@ export async function importBackup(file: BackupFile): Promise<void> {
       db.bodyweight.bulkAdd(data.bodyweight),
       db.tmEvents.bulkAdd(data.tmEvents),
       replaceStretch ? db.stretchSessions.bulkAdd(data.stretchSessions ?? []) : Promise.resolve(),
+      replaceSaved ? db.savedRoutines.bulkAdd(data.savedRoutines ?? []) : Promise.resolve(),
     ]);
   });
 }

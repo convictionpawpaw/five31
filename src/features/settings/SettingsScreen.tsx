@@ -8,6 +8,7 @@ import { db } from '../../db/db.ts';
 import {
   importBackup,
   parseBackupJson,
+  savedRoutinesImportPlan,
   stretchImportPlan,
   BackupValidationError,
 } from '../../db/exportImport.ts';
@@ -481,6 +482,13 @@ function DataSection({ toast }: { toast: ToastApi }) {
       : stretchPlan.mode === 'kept'
         ? 'Stretch history: kept (this backup predates it).'
         : `Stretch history: replaced with ${stretchPlan.count} session${stretchPlan.count === 1 ? '' : 's'}.`;
+  const savedPlan = pending ? savedRoutinesImportPlan(pending) : null;
+  const savedCopy =
+    savedPlan === null
+      ? ''
+      : savedPlan.mode === 'kept'
+        ? 'Saved routines: kept (this backup predates them).'
+        : `Saved routines: replaced with ${savedPlan.count} routine${savedPlan.count === 1 ? '' : 's'}.`;
 
   return (
     <HudPanel title="Data" className="settings__section">
@@ -515,6 +523,7 @@ function DataSection({ toast }: { toast: ToastApi }) {
             device. This cannot be undone.
           </p>
           <p className="label text-mid settings__modal-copy">{stretchCopy}</p>
+          <p className="label text-mid settings__modal-copy">{savedCopy}</p>
           <div className="settings__modal-actions">
             <Button variant="ghost" onClick={() => setPending(null)} disabled={busy}>
               Cancel
@@ -574,7 +583,7 @@ function DangerSection() {
         >
           <p className="label text-mid settings__modal-copy">
             This permanently deletes all cycles, workouts, accessories, bodyweight entries, stretch
-            sessions, and settings. Type <span className="text-danger">RESET</span> to confirm.
+            sessions, saved routines, and settings. Type <span className="text-danger">RESET</span> to confirm.
           </p>
           <input
             className="settings__reset-input"

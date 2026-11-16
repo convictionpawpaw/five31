@@ -81,6 +81,7 @@ export async function seedDemoData(cycleCount: number): Promise<void> {
       db.bodyweight,
       db.tmEvents,
       db.stretchSessions,
+      db.savedRoutines,
     ],
     async () => {
       // 1. Fresh DB. Clear every table (a full db.delete() would deadlock while
@@ -94,6 +95,7 @@ export async function seedDemoData(cycleCount: number): Promise<void> {
         db.bodyweight.clear(),
         db.tmEvents.clear(),
         db.stretchSessions.clear(),
+        db.savedRoutines.clear(),
       ]);
 
       // 2. Onboarding → Cycle 1 + accessories.

@@ -78,14 +78,28 @@ chosen areas and the rest to complementary ones, ordered standing, chair,
 kneeling, floor so you change position as little as possible. Shuffle gives a
 different routine for the same choices.
 
+**Repeats** (1x / 2x / 3x, default 2x, remembered per device) sets how many
+times each stretch is held, back to back: a one-sided stretch is hold, hold; a
+two-sided one is left, right, left, right. Coverage comes first (every chosen
+area still gets its stretch), then the spare time goes on repeats before any
+further new stretch, so a 2x routine has fewer different stretches, most of
+them done twice. Cat-cow is already a set of slow repetitions and is never
+repeated. The player shows "Rep 2 of 2" and says "Again" or "Switch sides"
+between reps of the same stretch.
+
+**Saved routines:** Save on the routine preview (or "Save this routine" after a
+session) keeps that exact routine under a name. The Saved routines list on the
+Stretch screen starts, renames or deletes one; a saved routine plays exactly as
+it was saved, and counts toward the streak like any other session.
+
 The player shows a stick-figure illustration (amber marks where you should feel
 it), a countdown with sound and vibration cues, and keeps the screen awake. A
 session counts once you have stretched at least half its planned time; ending
 earlier does not save it. The streak is strict: one counted session per local
 calendar day, and a missed day resets it to zero. Every illustration is on the
 gallery page at `#/stretch/gallery` ("All stretches" on the Stretch screen).
-Stretch sessions are included in backups (backup schema v2; v1 backups still
-import, and keep your current stretch history, see below). This is general
+Stretch sessions and saved routines are included in backups (backup schema v3;
+older backups still import and keep what they predate, see below). This is general
 flexibility guidance, not medical advice.
 
 ## Backup and restore
@@ -103,14 +117,18 @@ flexibility guidance, not medical advice.
   the app's), and every row of every table. A malformed file is rejected with
   the table and row named, and nothing on the device changes. A file with
   training data but no settings row is rejected.
-- **Stretch history on import:** a v2 backup replaces the stretch log with the
-  backup's sessions. A **v1 backup predates stretching, so your current stretch
-  log and streak are kept**. The confirmation dialog says which will happen.
+- **Stretch history on import:** a v2 or later backup replaces the stretch log
+  with the backup's sessions. A **v1 backup predates stretching, so your current
+  stretch log and streak are kept**. The confirmation dialog says which will
+  happen.
+- **Saved routines on import:** a v3 backup replaces your saved routines with
+  the backup's. A **v1 or v2 backup predates saved routines, so the ones on this
+  device are kept**. The confirmation dialog says this too.
 - **If a screen crashes**, the app shows an error screen instead of a dead end.
   It offers **Export Backup** (works without any other screen rendering),
   **Reload**, and a link to Settings. Your data stays in IndexedDB either way.
 - **Full Reset** (Settings → Danger) deletes cycles, workouts, accessories,
-  bodyweight, stretch sessions and settings. If the delete is blocked (usually
+  bodyweight, stretch sessions, saved routines and settings. If the delete is blocked (usually
   another FIVE31 window is open) it stops after a few seconds and says so.
 - App updates install in the background. The reload that applies an update
   waits until you leave a stretch routine, workout, or StrongLifts session.

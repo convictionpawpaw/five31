@@ -28,6 +28,7 @@ async function snapshotAllTables() {
     bodyweight: sortById(await db.bodyweight.toArray()),
     tmEvents: sortById(await db.tmEvents.toArray()),
     stretchSessions: sortById(await db.stretchSessions.toArray()),
+    savedRoutines: sortById(await db.savedRoutines.toArray()),
   };
 }
 
@@ -106,6 +107,7 @@ describe('import: stretch history vs. backup version', () => {
     const v1 = structuredClone(backup);
     v1.schemaVersion = 1;
     delete v1.data.stretchSessions;
+    delete v1.data.savedRoutines;
     expect(stretchImportPlan(v1)).toEqual({ mode: 'kept' });
 
     const stretchBefore = await listStretchSessions();
@@ -122,6 +124,7 @@ describe('import: stretch history vs. backup version', () => {
     const v1 = structuredClone(backup);
     v1.schemaVersion = 1;
     v1.data.stretchSessions = [];
+    delete v1.data.savedRoutines;
     const keep = await listStretchSessions();
     await importBackup(v1);
     expect(await listStretchSessions()).toEqual(keep);

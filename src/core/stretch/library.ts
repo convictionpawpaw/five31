@@ -121,6 +121,8 @@ export const STRETCHES: readonly Stretch[] = [
     position: 'kneeling',
     bilateral: false,
     holdSec: 40,
+    // Already a set of slow repetitions: never repeated as a block.
+    continuous: true,
     cues: [
       'On hands and knees, slowly round your back up toward the ceiling.',
       'Then let the belly drop and lift your chest, neck long, eyes on the floor ahead.',

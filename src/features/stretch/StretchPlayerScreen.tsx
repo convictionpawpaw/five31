@@ -5,7 +5,7 @@ import type { Routine, RoutineStep } from '../../core/stretch/types.ts';
 import { getStretch } from '../../core/stretch/library.ts';
 import { computeStreak } from '../../core/stretch/streak.ts';
 import { localIsoDate } from '../../core/localDate.ts';
-import { addStretchSession, listStretchSessions } from '../../db/repo/index.ts';
+import { addSavedRoutine, addStretchSession, listStretchSessions } from '../../db/repo/index.ts';
 import { Button, HudPanel, Modal, useToast } from '../../components/index.ts';
 import { useWakeLock } from '../workout/useWakeLock.ts';
 import { StretchFigure } from './StretchFigure.tsx';
@@ -35,13 +35,19 @@ import {
 } from './stretchAudio.ts';
 import { loadStretchPrefs, saveStretchPrefs } from './stretchPrefs.ts';
 import { fmtClock } from './stretchFormat.ts';
+import { defaultRoutineName, repLabel, transitionKind } from './routineFormat.ts';
+import { RoutineNameModal } from './RoutineNameModal.tsx';
 import { useToday } from './useToday.ts';
 import './stretch.css';
 
-/** Router state for /stretch/play. `done` marks a routine already saved. */
+/**
+ * Router state for /stretch/play. `done` marks a routine already saved;
+ * `fromSaved` a routine started from the saved list.
+ */
 interface PlayState {
   routine?: Routine;
   done?: boolean;
+  fromSaved?: boolean;
 }
 
 /** Validate router state into a playable routine (every stretch id known). */
@@ -65,8 +71,9 @@ export function StretchPlayerScreen() {
   const routine = useMemo(() => parseRoutine(location.state), [location.state]);
   // Read once at mount: the completion view itself marks the entry done.
   const [alreadyDone] = useState(() => (location.state as PlayState | null)?.done === true);
+  const [fromSaved] = useState(() => (location.state as PlayState | null)?.fromSaved === true);
   if (!routine || alreadyDone) return <Navigate to="/stretch" replace />;
-  return <Player routine={routine} />;
+  return <Player routine={routine} fromSaved={fromSaved} />;
 }
 
 interface Finished {
@@ -90,7 +97,7 @@ const STALL_MS = 4000;
 /** Body class that hides the tab bar while a routine is in progress. */
 const PLAYING_CLASS = 'stretch-playing';
 
-function Player({ routine }: { routine: Routine }) {
+function Player({ routine, fromSaved }: { routine: Routine; fromSaved: boolean }) {
   const navigate = useNavigate();
   const toast = useToast();
   const timeline = useMemo(() => buildTimeline(routine.steps), [routine]);
@@ -354,10 +361,10 @@ function Player({ routine }: { routine: Routine }) {
       setFinished({ actualSec, date: record.date });
       // Mark this history entry done so a reload lands on /stretch instead of
       // replaying the routine.
-      const state: PlayState = { routine, done: true };
+      const state: PlayState = { routine, done: true, fromSaved };
       navigate('/stretch/play', { replace: true, state });
     },
-    [routine, totalMs, toast, navigate, setClock, sessionRecord],
+    [routine, fromSaved, totalMs, toast, navigate, setClock, sessionRecord],
   );
 
   // Natural completion.
@@ -468,7 +475,7 @@ function Player({ routine }: { routine: Routine }) {
   };
 
   if (finished) {
-    return <Completion routine={routine} finished={finished} />;
+    return <Completion routine={routine} finished={finished} fromSaved={fromSaved} />;
   }
 
   // --- Render -------------------------------------------------------------------
@@ -483,10 +490,22 @@ function Player({ routine }: { routine: Routine }) {
   const C = 2 * Math.PI * R;
   const halfDone = activeSec * 2 >= routine.totalSec;
   const sideText = step.side ? `, ${step.side} side` : '';
+  const rep = repLabel(step);
+  const repText = rep ? `, ${rep.toLowerCase()}` : '';
+  const nextRep = repLabel(nextStep);
+  // Between reps / sides of one stretch the transition says so, rather than
+  // presenting it as a new stretch.
+  const kind = transitionKind(routine.steps, stepIndex);
 
   let phaseText: string;
+  let lead: string;
+  if (stepIndex === 0) lead = 'Get ready';
+  else if (kind === 'switch') lead = 'Switch sides';
+  else if (kind === 'again') lead = 'Again, same stretch';
+  else lead = 'Next';
   if (pos.done) phaseText = 'Finished';
-  else if (isPrep) phaseText = stepIndex === 0 ? 'Get ready' : 'Next up: get into position';
+  else if (isPrep)
+    phaseText = kind === 'new' && stepIndex > 0 ? 'Next up: get into position' : lead;
   else phaseText = 'Hold';
 
   let pausedText = '';
@@ -501,8 +520,8 @@ function Player({ routine }: { routine: Routine }) {
   let announce = '';
   if (!pos.done) {
     announce = isPrep
-      ? `${stepIndex === 0 ? 'Get ready' : 'Next'}: ${stretch.name}${sideText}, ${step.holdSec} second hold`
-      : `Hold ${stretch.name}${sideText} for ${step.holdSec} seconds`;
+      ? `${lead}: ${stretch.name}${sideText}${repText}, ${step.holdSec} second hold`
+      : `Hold ${stretch.name}${sideText}${repText} for ${step.holdSec} seconds`;
     if (pausedText) announce = `${pausedText}. ${announce}`;
   }
 
@@ -566,7 +585,7 @@ function Player({ routine }: { routine: Routine }) {
           pose={stretch.pose}
           mirrored={step.side === 'right'}
           title={`${stretch.name}${sideText}`}
-          className="splayer__figure"
+          className={`splayer__figure${running && !isPrep ? ' is-live' : ''}`}
         />
         {flash > 0 && (
           <span
@@ -579,7 +598,12 @@ function Player({ routine }: { routine: Routine }) {
 
       <div className="splayer__name-row">
         <h1 className="splayer__name">{stretch.name}</h1>
-        {step.side && <span className="label splayer__side">{step.side} side</span>}
+        {(step.side || rep) && (
+          <span className="splayer__tags">
+            {step.side && <span className="label splayer__side">{step.side} side</span>}
+            {rep && <span className="label splayer__rep">{rep}</span>}
+          </span>
+        )}
       </div>
 
       <div className="splayer__timer-row">
@@ -652,8 +676,16 @@ function Player({ routine }: { routine: Routine }) {
               mirrored={nextStep.side === 'right'}
               className="stretch__thumb"
             />
-            <span className="stretch__step-name">{nextStretch.name}</span>
-            {nextStep.side && <span className="label stretch__side">{nextStep.side}</span>}
+            <span className="stretch__step-name">
+              {nextStep.stretchId === step.stretchId
+                ? `${nextStretch.name} (again)`
+                : nextStretch.name}
+            </span>
+            <span className="label stretch__side">
+              {[nextStep.side, nextRep && `${nextStep.rep}/${nextStep.repOf}`]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
             <span className="num stretch__step-sec">{nextStep.holdSec}s</span>
           </div>
         ) : (
@@ -690,10 +722,24 @@ function Player({ routine }: { routine: Routine }) {
   );
 }
 
-/** Shown after a session is saved: the updated streak and a way out. */
-function Completion({ routine, finished }: { routine: Routine; finished: Finished }) {
+/**
+ * Shown after a session is saved: the updated streak, a way out, and (for a
+ * generated routine) "Save this routine".
+ */
+function Completion({
+  routine,
+  finished,
+  fromSaved,
+}: {
+  routine: Routine;
+  finished: Finished;
+  fromSaved: boolean;
+}) {
   const navigate = useNavigate();
+  const toast = useToast();
   const today = useToday();
+  const [naming, setNaming] = useState(false);
+  const [savedOnce, setSavedOnce] = useState(false);
   const sessions = useLiveQuery(listStretchSessions, []);
   const streak = useMemo(
     () => (sessions ? computeStreak(sessions, today) : null),
@@ -718,9 +764,28 @@ function Completion({ routine, finished }: { routine: Routine; finished: Finishe
       <Button variant="primary" block onClick={() => navigate('/stretch', { replace: true })}>
         Done
       </Button>
+      {!fromSaved && !savedOnce && (
+        <Button variant="ghost" block onClick={() => setNaming(true)}>
+          Save this routine
+        </Button>
+      )}
       <Button variant="ghost" block onClick={() => navigate('/', { replace: true })}>
         Today
       </Button>
+      {naming && (
+        <RoutineNameModal
+          title="Save routine"
+          initialName={defaultRoutineName(routine)}
+          confirmLabel="Save"
+          onClose={() => setNaming(false)}
+          onSubmit={async (name) => {
+            await addSavedRoutine(name, routine);
+            setNaming(false);
+            setSavedOnce(true);
+            toast.show('Routine saved', 'success');
+          }}
+        />
+      )}
     </div>
   );
 }

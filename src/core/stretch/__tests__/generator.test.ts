@@ -51,6 +51,14 @@ const NARROW_SETS: BodyArea[][] = [['calves'], ['wristsForearms'], ['quads']];
 const ALL_AREAS: BodyArea[] = [...BODY_AREAS];
 const ALL_SETS: BodyArea[][] = [[], ['neck'], ...DEEP_SETS, ...NARROW_SETS, ALL_AREAS];
 
+/**
+ * The suites below pin today's one-rep behaviour (reps defaults to 2 since the
+ * Repeats feature); rep-specific properties are in generatorReps.test.ts.
+ */
+function gen(opts: Parameters<typeof generateRoutine>[0]): Routine {
+  return generateRoutine({ reps: 1, ...opts });
+}
+
 function stretchOf(id: string) {
   const s = getStretch(id);
   if (!s) throw new Error(`unknown stretch ${id}`);
@@ -106,7 +114,7 @@ function cases(): Case[] {
   for (const focusAreas of ALL_SETS) {
     for (const minutes of MINUTES) {
       for (const seed of SEEDS) {
-        const r = generateRoutine({ minutes, focusAreas, seed });
+        const r = gen({ minutes, focusAreas, seed });
         cache.push({ r, label: `focus=[${focusAreas.join(',')}] min=${minutes} seed=${seed}` });
       }
     }
@@ -145,7 +153,7 @@ describe('generateRoutine: invariants across seeds, durations and focus sets', (
       const focusAreas = BODY_AREAS.filter((_, i) => mask & (1 << i));
       for (const minutes of MINUTES) {
         const seed = mask * 31 + minutes;
-        const r = generateRoutine({ minutes, focusAreas, seed });
+        const r = gen({ minutes, focusAreas, seed });
         const label = `[${focusAreas.join(',')}] ${minutes}m seed ${seed}`;
         const off = Math.abs(r.totalSec - minutes * 60);
         if (off > 2) bad.push(`${label}: off ${off}s`);
@@ -225,31 +233,31 @@ describe('generateRoutine: invariants across seeds, durations and focus sets', (
   });
 
   it('is deterministic for a given seed and changes with the seed', () => {
-    const a = generateRoutine({ minutes: 7, focusAreas: ['neck', 'chest'], seed: 42 });
-    const b = generateRoutine({ minutes: 7, focusAreas: ['neck', 'chest'], seed: 42 });
+    const a = gen({ minutes: 7, focusAreas: ['neck', 'chest'], seed: 42 });
+    const b = gen({ minutes: 7, focusAreas: ['neck', 'chest'], seed: 42 });
     expect(b).toEqual(a);
     const variants = new Set(
-      SEEDS.map((seed) => uniqueIds(generateRoutine({ minutes: 7, focusAreas: [], seed })).join()),
+      SEEDS.map((seed) => uniqueIds(gen({ minutes: 7, focusAreas: [], seed })).join()),
     );
     expect(variants.size).toBeGreaterThan(10);
   });
 
   it('clamps minutes into 5..10, and uses 7 when minutes is not a number', () => {
-    expect(generateRoutine({ minutes: 2, focusAreas: [], seed: 1 }).minutes).toBe(5);
-    expect(generateRoutine({ minutes: 25, focusAreas: [], seed: 1 }).minutes).toBe(10);
-    expect(generateRoutine({ minutes: 7.4, focusAreas: [], seed: 1 }).minutes).toBe(7);
-    expect(generateRoutine({ minutes: -3, focusAreas: [], seed: 1 }).minutes).toBe(5);
-    expect(generateRoutine({ minutes: Infinity, focusAreas: [], seed: 1 }).minutes).toBe(10);
-    expect(generateRoutine({ minutes: -Infinity, focusAreas: [], seed: 1 }).minutes).toBe(5);
+    expect(gen({ minutes: 2, focusAreas: [], seed: 1 }).minutes).toBe(5);
+    expect(gen({ minutes: 25, focusAreas: [], seed: 1 }).minutes).toBe(10);
+    expect(gen({ minutes: 7.4, focusAreas: [], seed: 1 }).minutes).toBe(7);
+    expect(gen({ minutes: -3, focusAreas: [], seed: 1 }).minutes).toBe(5);
+    expect(gen({ minutes: Infinity, focusAreas: [], seed: 1 }).minutes).toBe(10);
+    expect(gen({ minutes: -Infinity, focusAreas: [], seed: 1 }).minutes).toBe(5);
     for (const bad of [Number.NaN, undefined, null, '8']) {
-      const r = generateRoutine({ minutes: bad as unknown as number, focusAreas: [], seed: 1 });
+      const r = gen({ minutes: bad as unknown as number, focusAreas: [], seed: 1 });
       expect(r.minutes, String(bad)).toBe(7);
       expect(Math.abs(r.totalSec - 420), String(bad)).toBeLessThanOrEqual(2);
     }
   });
 
   it('reports the transition budget in the total', () => {
-    const r = generateRoutine({ minutes: 5, focusAreas: [], seed: 3 });
+    const r = gen({ minutes: 5, focusAreas: [], seed: 3 });
     const holds = r.steps.reduce((n, st) => n + st.holdSec, 0);
     expect(r.totalSec).toBe(holds + TRANSITION_SEC * r.steps.length);
   });
@@ -264,7 +272,7 @@ describe('generateRoutine: focus', () => {
       for (const focusAreas of DEEP_SETS) {
         for (const minutes of MINUTES) {
           for (const seed of SEEDS) {
-            const r = generateRoutine({ minutes, focusAreas, seed });
+            const r = gen({ minutes, focusAreas, seed });
             const share = focusShare(r);
             const label = `focus=[${focusAreas.join(',')}] min=${minutes} seed=${seed} share=${share}`;
             expect(share, label).toBeGreaterThanOrEqual(0.7);
@@ -283,7 +291,7 @@ describe('generateRoutine: focus', () => {
   it('neck-only focus keeps neck holds capped and still dominates', () => {
     for (const minutes of MINUTES) {
       for (const seed of SEEDS) {
-        const r = generateRoutine({ minutes, focusAreas: ['neck'], seed });
+        const r = gen({ minutes, focusAreas: ['neck'], seed });
         const label = `min=${minutes} seed=${seed}`;
         const neckSec = r.steps
           .filter((st) => stretchOf(st.stretchId).areas[0] === 'neck')
@@ -305,7 +313,7 @@ describe('generateRoutine: focus', () => {
     for (const focusAreas of NARROW_SETS) {
       for (const minutes of MINUTES) {
         for (const seed of SEEDS) {
-          const r = generateRoutine({ minutes, focusAreas, seed });
+          const r = gen({ minutes, focusAreas, seed });
           const label = `focus=[${focusAreas.join(',')}] min=${minutes} seed=${seed}`;
           // Wrists at 10 min: 3 stretches at their caps are ~28% of the time.
           expect(focusShare(r), label).toBeGreaterThanOrEqual(0.25);
@@ -338,7 +346,7 @@ describe('generateRoutine: focus', () => {
     for (const [focusAreas, min] of bounds) {
       for (const minutes of MINUTES) {
         for (const seed of SEEDS) {
-          const r = generateRoutine({ minutes, focusAreas, seed });
+          const r = gen({ minutes, focusAreas, seed });
           const label = `focus=[${focusAreas.join(',')}] min=${minutes} seed=${seed}`;
           expect(primaryShare(r), label).toBeGreaterThanOrEqual(min);
         }
@@ -356,7 +364,7 @@ describe('generateRoutine: focus', () => {
       let worstLabel = '';
       for (const minutes of MINUTES) {
         for (let seed = 1; seed <= 3000; seed++) {
-          const r = generateRoutine({ minutes, focusAreas: OWNER, seed });
+          const r = gen({ minutes, focusAreas: OWNER, seed });
           const vals = perAreaSeconds(r, OWNER);
           const ratio = Math.max(...vals) / Math.min(...vals);
           if (!(ratio <= worst)) {
@@ -378,7 +386,7 @@ describe('generateRoutine: focus', () => {
     for (const focusAreas of sets) {
       for (const minutes of MINUTES) {
         for (const seed of SEEDS) {
-          const r = generateRoutine({ minutes, focusAreas, seed });
+          const r = gen({ minutes, focusAreas, seed });
           const label = `focus=[${focusAreas.join(',')}] min=${minutes} seed=${seed}`;
           const vals = perAreaSeconds(r, focusAreas);
           expect(Math.min(...vals), label).toBeGreaterThan(0);
@@ -394,7 +402,7 @@ describe('generateRoutine: focus', () => {
       for (const focusAreas of [[area], OWNER.includes(area) ? OWNER : [area, 'neck' as const]]) {
         for (const minutes of [5, 10]) {
           for (const seed of SEEDS.slice(0, 20)) {
-            const r = generateRoutine({ minutes, focusAreas, seed, recentStretchIds: recent });
+            const r = gen({ minutes, focusAreas, seed, recentStretchIds: recent });
             const label = `${area} in [${focusAreas.join(',')}] min=${minutes} seed=${seed}`;
             expect(
               uniqueIds(r).some((id) => stretchOf(id).areas[0] === area),
@@ -410,7 +418,7 @@ describe('generateRoutine: focus', () => {
     for (const minutes of MINUTES) {
       const counts = new Map<string, number>();
       for (let seed = 1; seed <= 500; seed++) {
-        const r = generateRoutine({ minutes, focusAreas: OWNER, seed });
+        const r = gen({ minutes, focusAreas: OWNER, seed });
         for (const id of uniqueIds(r)) {
           const s = stretchOf(id);
           if (s.areas.some((a) => OWNER.includes(a))) continue;
@@ -442,7 +450,7 @@ describe('generateRoutine: many focus areas', () => {
     for (const focusAreas of SIX) {
       for (const minutes of [5, 7, 10]) {
         for (const seed of SEEDS) {
-          const r = generateRoutine({ minutes, focusAreas, seed });
+          const r = gen({ minutes, focusAreas, seed });
           const label = `[${focusAreas.join(',')}] min=${minutes} seed=${seed}`;
           expect(r.droppedAreas, label).toEqual([]);
           const prim = new Set(uniqueIds(r).map((id) => stretchOf(id).areas[0]));
@@ -455,7 +463,7 @@ describe('generateRoutine: many focus areas', () => {
   it('all areas: nothing dropped at 7 and 10 minutes', () => {
     for (const minutes of [7, 10]) {
       for (const seed of SEEDS) {
-        const r = generateRoutine({ minutes, focusAreas: ALL_AREAS, seed });
+        const r = gen({ minutes, focusAreas: ALL_AREAS, seed });
         expect(r.droppedAreas, `min=${minutes} seed=${seed}`).toEqual([]);
         const prim = new Set(uniqueIds(r).map((id) => stretchOf(id).areas[0]));
         for (const a of ALL_AREAS)
@@ -470,7 +478,7 @@ describe('generateRoutine: many focus areas', () => {
   it('all areas at 5 minutes: drops are minimal, seeded and reported', () => {
     const droppedSeen = new Set<string>();
     for (const seed of SEEDS) {
-      const r = generateRoutine({ minutes: 5, focusAreas: ALL_AREAS, seed });
+      const r = gen({ minutes: 5, focusAreas: ALL_AREAS, seed });
       const label = `seed=${seed}`;
       const dropped = r.droppedAreas ?? [];
       expect(dropped.length, label).toBeGreaterThan(0);
@@ -489,8 +497,8 @@ describe('generateRoutine: many focus areas', () => {
   });
 
   it('droppedAreas is empty for ordinary routines', () => {
-    expect(generateRoutine({ minutes: 7, focusAreas: OWNER, seed: 1 }).droppedAreas).toEqual([]);
-    expect(generateRoutine({ minutes: 5, focusAreas: [], seed: 1 }).droppedAreas).toEqual([]);
+    expect(gen({ minutes: 7, focusAreas: OWNER, seed: 1 }).droppedAreas).toEqual([]);
+    expect(gen({ minutes: 5, focusAreas: [], seed: 1 }).droppedAreas).toEqual([]);
   });
 });
 
@@ -498,7 +506,7 @@ describe('generateRoutine: well-rounded', () => {
   it('always has a PRIMARY neck, upper back, lower back, chest, hips and hamstring stretch', () => {
     for (const minutes of MINUTES) {
       for (const seed of SEEDS) {
-        const r = generateRoutine({ minutes, focusAreas: [], seed });
+        const r = gen({ minutes, focusAreas: [], seed });
         const label = `min=${minutes} seed=${seed}`;
         const prim = new Set(uniqueIds(r).map((id) => stretchOf(id).areas[0]));
         for (const a of WELL_ROUNDED_CORE) expect(prim.has(a), `${label} missing ${a}`).toBe(true);
@@ -513,7 +521,7 @@ describe('generateRoutine: well-rounded', () => {
     const seenLong = new Set<BodyArea>();
     for (const minutes of MINUTES) {
       for (const seed of SEEDS) {
-        const r = generateRoutine({ minutes, focusAreas: [], seed });
+        const r = gen({ minutes, focusAreas: [], seed });
         const prim = new Set(uniqueIds(r).map((id) => stretchOf(id).areas[0]!));
         for (const a of ['quads', 'calves', 'wristsForearms'] as const) {
           if (!prim.has(a)) continue;
@@ -530,9 +538,9 @@ describe('generateRoutine: recent stretches', () => {
   it('avoids recently done stretches when equally relevant alternatives exist', () => {
     for (const minutes of [5, 7]) {
       for (const seed of SEEDS) {
-        const first = generateRoutine({ minutes, focusAreas: [], seed });
+        const first = gen({ minutes, focusAreas: [], seed });
         const recent = uniqueIds(first);
-        const next = generateRoutine({
+        const next = gen({
           minutes,
           focusAreas: [],
           seed: seed + 1,
@@ -545,8 +553,8 @@ describe('generateRoutine: recent stretches', () => {
   });
 
   it('still produces a full routine when everything is recent', () => {
-    const all = generateRoutine({ minutes: 10, focusAreas: [], seed: 9 });
-    const r = generateRoutine({
+    const all = gen({ minutes: 10, focusAreas: [], seed: 9 });
+    const r = gen({
       minutes: 10,
       focusAreas: [],
       seed: 9,

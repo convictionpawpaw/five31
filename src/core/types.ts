@@ -1,4 +1,4 @@
-import type { StretchSession } from './stretch/types.ts';
+import type { SavedRoutine, StretchSession } from './stretch/types.ts';
 
 export type LiftId = 'press' | 'deadlift' | 'bench' | 'squat';
 export type Units = 'lb' | 'kg';
@@ -188,5 +188,10 @@ export interface BackupFile {
      * migration adds it as [], and every v2 export carries it.
      */
     stretchSessions?: StretchSession[];
+    /**
+     * Saved stretch routines (schemaVersion 3+). Absent before v3; the v2 -> v3
+     * migration adds it as [], and every v3 export carries it.
+     */
+    savedRoutines?: SavedRoutine[];
   };
 }
